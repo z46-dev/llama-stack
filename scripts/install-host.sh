@@ -12,6 +12,7 @@ readonly ADMIN_GROUP=llama-stack-admins
 
 skip_packages=false
 skip_llama_build=false
+no_start=false
 
 usage() {
     cat <<'EOF'
@@ -20,6 +21,7 @@ Usage: sudo ./scripts/install-host.sh [options]
 Options:
   --skip-packages      Do not install Fedora or NVIDIA packages
   --skip-llama-build   Do not build and install llama.cpp
+  --no-start           Install and render services without starting them
 EOF
 }
 
@@ -30,6 +32,9 @@ while (($# > 0)); do
             ;;
         --skip-llama-build)
             skip_llama_build=true
+            ;;
+        --no-start)
+            no_start=true
             ;;
         -h | --help)
             usage
@@ -95,10 +100,26 @@ if ! grep -q "^${SERVICE_USER}:" /etc/subgid; then
 fi
 
 if [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]]; then
-    usermod --append --groups "$ADMIN_GROUP" "$SUDO_USER"
+    if ! getent passwd "$SUDO_USER" >/dev/null; then
+        printf 'Cannot resolve sudo user %s through NSS.\n' "$SUDO_USER" >&2
+        exit 1
+    fi
+    if ! getent group "$ADMIN_GROUP" | awk -F: -v user="$SUDO_USER" '
+        {
+            count = split($4, members, ",")
+            for (index = 1; index <= count; index++) {
+                if (members[index] == user) {
+                    found = 1
+                }
+            }
+        }
+        END { exit !found }
+    '; then
+        gpasswd --add "$SUDO_USER" "$ADMIN_GROUP"
+    fi
 fi
 
-install -d -m 0750 -o root -g "$ADMIN_GROUP" "$CONFIG_DIR"
+install -d -m 0755 -o root -g root "$CONFIG_DIR"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
     /var/cache/llama-stack \
     /var/lib/llama-stack \
@@ -107,10 +128,12 @@ install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
     /var/lib/llama-stack/users
 
 if [[ ! -e "$CONFIG_DIR/config.toml" ]]; then
-    install -m 0640 -o root -g "$ADMIN_GROUP" \
+    install -m 0644 -o root -g root \
         "$REPO_DIR/config/config.example.toml" \
         "$CONFIG_DIR/config.toml"
 fi
+chown root:root "$CONFIG_DIR/config.toml"
+chmod 0644 "$CONFIG_DIR/config.toml"
 
 if [[ $skip_packages == false ]]; then
     "$SCRIPT_DIR/install-gpu.sh" "$CONFIG_DIR/config.toml"
@@ -132,6 +155,11 @@ if ! command -v nvidia-smi >/dev/null || ! nvidia-smi >/dev/null 2>&1; then
     printf '\nNVIDIA packages were installed, but the driver is not active. Reboot, then run:\n'
     printf '  sudo systemctl enable --now llama-stack.target\n'
     printf '  sudo llama-stack doctor\n'
+    exit 0
+fi
+
+if [[ $no_start == true ]]; then
+    printf 'Stack installed and rendered but not started (--no-start).\n'
     exit 0
 fi
 

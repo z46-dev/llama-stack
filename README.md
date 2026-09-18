@@ -55,6 +55,20 @@ sudo make setup
 The setup is intentionally non-interactive. Existing configuration and secrets
 are preserved. If the NVIDIA driver was newly installed and is not yet active,
 the installer stops after rendering the stack and asks for a reboot.
+If Secure Boot is enabled without an already working signed NVIDIA module,
+setup stops before changing the GPU installation and explains the required
+manual action.
+
+For a staged first installation that does not start services:
+
+```bash
+sudo make setup SETUP_FLAGS=--no-start
+```
+
+The installer supports IPA users: it records the invoking sudo user in the
+local `llama-stack-admins` group. The non-secret configuration is readable by
+the service and read-only CLI users; credentials remain under the restricted
+`/etc/llama-stack/secrets` directory.
 
 After rebooting:
 

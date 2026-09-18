@@ -40,6 +40,13 @@ if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 && command -v 
     exit 0
 fi
 
+if mokutil --sb-state 2>/dev/null | grep -q 'SecureBoot enabled' &&
+    { ! command -v nvidia-smi >/dev/null || ! nvidia-smi >/dev/null 2>&1; }; then
+    printf 'Secure Boot is enabled and no working signed NVIDIA driver is loaded.\n' >&2
+    printf 'Disable Secure Boot or enroll a module-signing key, then rerun setup.\n' >&2
+    exit 1
+fi
+
 REPOSITORY_URL="$(read_toml gpu.repository_url)"
 readonly REPOSITORY_URL
 mapfile -t driver_packages < <(read_toml gpu.driver_packages)
@@ -50,9 +57,5 @@ curl --fail --location --show-error \
     --output /etc/yum.repos.d/cuda-fedora44.repo
 
 dnf install -y "${driver_packages[@]}" "${toolkit_packages[@]}"
-
-if mokutil --sb-state 2>/dev/null | grep -q 'SecureBoot enabled'; then
-    printf '\nSecure Boot is enabled. The NVIDIA kernel module must be signed and enrolled before it can load.\n'
-fi
 
 printf '\nGPU packages installed. A reboot may be required before nvidia-smi succeeds.\n'

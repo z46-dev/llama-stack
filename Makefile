@@ -3,6 +3,7 @@ SHELL := /usr/bin/bash
 GO ?= go
 VERSION ?= $(shell git describe --always --dirty 2>/dev/null || printf 'development')
 BUILD_DIR ?= build
+SETUP_FLAGS ?=
 GOFLAGS := -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
@@ -34,7 +35,7 @@ install: build
 
 # Fedora 44 end-to-end setup. Use `sudo make setup`.
 setup:
-	./scripts/install-host.sh
+	./scripts/install-host.sh $(SETUP_FLAGS)
 
 clean:
 	$(RM) -r $(BUILD_DIR)
