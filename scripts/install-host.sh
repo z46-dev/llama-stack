@@ -70,7 +70,8 @@ if [[ $skip_packages == false ]]; then
     dnf upgrade -y
     dnf install -y \
         ca-certificates cmake curl gcc gcc-c++ git golang jq make mokutil \
-        ninja-build openssl podman policycoreutils-python-utils python3
+        libcurl-devel ninja-build openssl podman policycoreutils-python-utils \
+        python3
 fi
 
 getent group "$SERVICE_GROUP" >/dev/null || groupadd --system "$SERVICE_GROUP"

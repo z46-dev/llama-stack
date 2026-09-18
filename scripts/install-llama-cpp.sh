@@ -28,6 +28,19 @@ else:
 PY
 }
 
+find_cuda_root() {
+    local candidate
+
+    for candidate in "${CUDA_HOME:-}" /usr/local/cuda /usr/local/cuda-*; do
+        if [[ -n $candidate && -x $candidate/bin/nvcc ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 REPOSITORY="$(read_toml llama.repository)"
 readonly REPOSITORY
 REVISION="$(read_toml llama.revision)"
@@ -36,11 +49,21 @@ SOURCE_DIRECTORY="$(read_toml llama.source_directory)"
 readonly SOURCE_DIRECTORY
 CUDA_ARCHITECTURES="$(read_toml gpu.cuda_architectures)"
 readonly CUDA_ARCHITECTURES
+CUDA_ROOT="$(find_cuda_root || true)"
+readonly CUDA_ROOT
 
 if [[ $REVISION == REPLACE_WITH_TESTED_COMMIT ]]; then
     printf 'Set llama.revision to a tested llama.cpp commit in %s.\n' "$CONFIG_PATH" >&2
     exit 1
 fi
+
+if [[ -z $CUDA_ROOT ]]; then
+    printf 'CUDA toolkit not found. Expected nvcc under /usr/local/cuda/bin.\n' >&2
+    printf 'Check: dnf list installed "cuda-toolkit*" && find /usr/local -name nvcc\n' >&2
+    exit 1
+fi
+
+export PATH="$CUDA_ROOT/bin:$PATH"
 
 if [[ ! -d "$SOURCE_DIRECTORY/.git" ]]; then
     git clone "$REPOSITORY" "$SOURCE_DIRECTORY"
@@ -50,11 +73,14 @@ git -C "$SOURCE_DIRECTORY" fetch --tags origin
 git -C "$SOURCE_DIRECTORY" checkout --detach "$REVISION"
 
 cmake \
+    --fresh \
     -S "$SOURCE_DIRECTORY" \
     -B "$SOURCE_DIRECTORY/build" \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CUDA_COMPILER="$CUDA_ROOT/bin/nvcc" \
     -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHITECTURES" \
+    -DCUDAToolkit_ROOT="$CUDA_ROOT" \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
     -DBUILD_SHARED_LIBS=ON \
     -DGGML_CUDA=ON \

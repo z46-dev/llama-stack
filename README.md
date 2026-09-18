@@ -58,6 +58,9 @@ the installer stops after rendering the stack and asks for a reboot.
 If Secure Boot is enabled without an already working signed NVIDIA module,
 setup stops before changing the GPU installation and explains the required
 manual action.
+CUDA discovery does not depend on login-shell profile files: setup locates
+`nvcc` beneath `/usr/local/cuda`, passes the toolkit explicitly to CMake, and
+uses a fresh CMake cache so a failed first configuration can be retried.
 
 For a staged first installation that does not start services:
 

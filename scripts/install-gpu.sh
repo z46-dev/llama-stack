@@ -30,12 +30,28 @@ else:
 PY
 }
 
+cuda_compiler() {
+    local candidate
+
+    for candidate in \
+        "${CUDA_HOME:-}/bin/nvcc" \
+        /usr/local/cuda/bin/nvcc \
+        /usr/local/cuda-*/bin/nvcc; do
+        if [[ -n $candidate && -x $candidate ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    command -v nvcc 2>/dev/null
+}
+
 if [[ $(read_toml gpu.enabled) != true ]]; then
     printf 'GPU setup disabled in %s.\n' "$CONFIG_PATH"
     exit 0
 fi
 
-if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 && command -v nvcc >/dev/null; then
+if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 && cuda_compiler >/dev/null; then
     printf 'NVIDIA driver and CUDA compiler are already operational.\n'
     exit 0
 fi
@@ -57,5 +73,11 @@ curl --fail --location --show-error \
     --output /etc/yum.repos.d/cuda-fedora44.repo
 
 dnf install -y "${driver_packages[@]}" "${toolkit_packages[@]}"
+
+if ! cuda_compiler >/dev/null; then
+    printf 'CUDA packages installed, but nvcc was not found under /usr/local/cuda.\n' >&2
+    printf 'Check: dnf list installed "cuda-toolkit*" && find /usr/local -name nvcc\n' >&2
+    exit 1
+fi
 
 printf '\nGPU packages installed. A reboot may be required before nvidia-smi succeeds.\n'
