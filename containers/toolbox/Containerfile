@@ -1,0 +1,16 @@
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf upgrade -y && \
+    dnf group install -y development-tools && \
+    dnf install -y \
+        ShellCheck bind-utils clang clang-tools-extra cmake curl diffutils \
+        fd-find file findutils fzf gcc gcc-c++ gdb git git-lfs golang \
+        hyperfine iproute jq lldb ltrace make ninja-build nodejs npm \
+        openssh-clients openssl-devel patch perf procps-ng python3 \
+        python3-devel python3-pip ripgrep rsync shfmt sqlite sqlite-devel \
+        strace tar time tmux tree unzip valgrind vim-minimal wget xz yq \
+        zip zstd && \
+    dnf clean all
+
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

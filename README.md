@@ -1,12 +1,15 @@
 # llama-stack
 
-A setup and feature stack for llama.cpp. It bundles Open WebUI and other services to create a rich experience with LLMs on limited hardware.
+A reproducible Fedora stack for running llama.cpp as a local AI service. It
+combines native CUDA inference with Open WebUI, SearXNG, isolated Podman
+workspaces, generated artifact downloads, and a small orchestration service.
 
 ## Target/Restrictions
 
 This setup stack is designed to run on a Fedora 44 server. In my homelab, this is a VM on a Proxmox server. The GPUs I use are done through PCI passthrough, so the VM has direct access to the GPU.
 
 For specs, a good minimum for a smooth experience is:
+
 - 8 CPU cores
 - 24GB of host RAM (separate from GPU memory)
 - 1TB of storage (SSD preferred, HDDs work fine)
@@ -17,12 +20,183 @@ In my homelab setup, I have two NVIDIA A2 GPUs and a T4 for a total of 48GB of V
 
 ## Features
 
-- llama.cpp
-- Open WebUI
+- Native CUDA llama.cpp server and OpenAI-compatible API
+- Open WebUI with automatic context compaction enabled by default
 - Podman Quadlets to give each "user" their own container in which the models may work.
-- An exports service with a downloads web server to allow users to download files or artifacts from the workspaces that the models generated.
+- A read-only exports service for generated artifacts
 - SearXNG for web searches through a Podman Quadlet.
-- A few MCP servers
+- Persistent, capability-scoped TCP port leasing for agent workspaces
+- An MCP resource server with allocate, list, renew, and release tools
+- A Go CLI, host doctor, and orchestration daemon foundation
+
+## Lifecycle
+
+The intended ownership boundary is:
+
+1. The administrator creates the Fedora 44 VM and optionally enrolls it in
+   FreeIPA.
+2. `llama-stack` installs the NVIDIA/CUDA dependencies, builds llama.cpp,
+   installs every service, and runs its initial doctor checks.
+3. The administrator adds models through `llama-stack` and configures network
+   access, Open WebUI accounts, and optional external identity.
+
+## Initial installation
+
+Install the two bootstrap tools, clone the repository, inspect
+`config/config.example.toml`, and run the setup target:
+
+```bash
+sudo dnf install -y git make
+git clone https://github.com/z46-dev/llama-stack.git
+cd llama-stack
+sudo make setup
+```
+
+The setup is intentionally non-interactive. Existing configuration and secrets
+are preserved. If the NVIDIA driver was newly installed and is not yet active,
+the installer stops after rendering the stack and asks for a reboot.
+
+After rebooting:
+
+```bash
+sudo systemctl enable --now llama-stack.target
+sudo llama-stack doctor
+```
+
+To install rebuilt binaries and regenerate services without package or
+llama.cpp setup:
+
+```bash
+sudo make install
+```
+
+## Configuration
+
+The source of truth is `/etc/llama-stack/config.toml`. The initial file is
+copied from `config/config.example.toml` and is never overwritten by an update.
+
+After changing it, regenerate the managed units:
+
+```bash
+sudo llama-stack render
+sudo systemctl restart llama-stack.target
+sudo llama-stack doctor
+```
+
+The default 65,536-token model context compacts at 48,000 tokens, retaining 40%
+of the newest messages. This leaves room for output, system instructions,
+memory, and tool results.
+
+## Models
+
+The first implementation supports atomically importing a GGUF already present
+on the host into managed model storage:
+
+```bash
+sudo llama-stack model add /srv/models/model.gguf
+llama-stack model list
+```
+
+Direct Hugging Face downloads and declarative model manifests are planned for
+the next model-management pass.
+
+## Agent port leases
+
+`llama-stackd` owns the shared TCP port pool configured under `[ports]`. Ports
+are leased globally rather than assigned permanently to a user. Each lease is
+bound to a user, agent run, workspace, and broker-controlled target host, and
+is persisted through `gosqlite` so active forwarding can be reconstructed
+after a daemon restart. `gasket` records precise lease-expiration jobs in a
+separate SQLite database; the broker's periodic reaper remains a recovery
+safety net if a scheduled job is delayed.
+
+An administrator or the future workspace controller creates a short-lived run
+capability:
+
+```bash
+sudo llama-stack resource capability issue \
+  --user user-a \
+  --run run-123 \
+  --workspace workspace-123 \
+  --target-host 127.0.0.1 \
+  --ttl 7200
+```
+
+The plaintext capability is returned once. Its SHA-256 digest, identity scope,
+target host, and expiry are stored; agents cannot choose their identity or use
+the broker as an arbitrary network proxy.
+
+The capability can be passed to the included stdio MCP server:
+
+```bash
+export LLAMA_STACK_CAPABILITY_TOKEN='lsrc_...'
+/usr/local/libexec/llama-stack/llama-stack-resource-mcp
+```
+
+It exposes four tools:
+
+- `port_allocate` maps one or more leased host ports to workspace target ports.
+- `port_list` reports leases belonging to the current run capability.
+- `port_renew` extends a lease without exceeding the capability lifetime.
+- `port_release` immediately returns ports to the global pool.
+
+When the pool has insufficient capacity, allocation returns a structured
+`resource_exhausted` error and a retry hint. An agent may request a bounded
+wait with `wait_seconds`; it will resume when capacity changes or return the
+same error when its wait expires. Per-run and per-user limits prevent one run
+from retaining the entire pool. Expired leases are reaped automatically.
+
+The MCP server is deliberately not added to llama-server's global static MCP
+configuration. A single static capability would erase user isolation. The
+workspace controller will launch one MCP process per run and inject that run's
+capability when workspace orchestration is implemented.
+
+Administrators can inspect or revoke leases:
+
+```bash
+sudo llama-stack resource ports list
+sudo llama-stack resource ports revoke lease_0123456789abcdef
+sudo llama-stack resource capability revoke cap_0123456789abcdef
+```
+
+## Administrative access
+
+Potentially privileged CLI commands require both:
+
+- execution through `sudo`; and
+- membership of the original sudo user in the local `llama-stack-admins`
+  group.
+
+Direct root execution is permitted for system services and recovery. The
+installer creates the group and adds the user who invoked `sudo make setup`.
+Read-only commands such as `doctor`, `model list`, and `version` do not require
+administrative membership.
+
+Examples:
+
+```bash
+llama-stack doctor
+llama-stack model list
+sudo llama-stack model add /srv/models/example.gguf
+```
+
+## Development
+
+```bash
+make fmt
+make test
+make lint
+make build
+make verify
+```
+
+The same `make verify` and `make build` paths run in GitHub Actions and can be
+executed locally through `act`.
+
+The Go services intentionally build on focused modules instead of duplicating
+their functionality: `gosqlite` provides typed persistence, `gasket` provides
+durable scheduled jobs, `golog` provides daemon logging, and `go-arg` provides
+the nested command-line parser.
 
 ## Technical Details
 
@@ -35,8 +209,24 @@ In my homelab setup, I have two NVIDIA A2 GPUs and a T4 for a total of 48GB of V
   - Perform searches through SearXNG and have the results available to the LLMs in their workspaces
   - Have a downloads server that allows users to download files generated by the LLMs in their workspaces
 
-### The llama-stack service
+### System services
 
-The `llama-stack` service is a systemd service that manages the lifecycle of the various components of the stack. It ensures that all services are started in the correct order and monitors their health.
+`llama-stack.target` groups the independently managed services. Native inference
+runs as `llama-server.service`; the control-plane foundation runs as
+`llama-stackd.service`; container services are generated from Quadlets. Systemd
+retains responsibility for dependency ordering, restart policy, and logging.
 
-There is also the "identity" server, which is responsible for managing user identities, API keys, quotas, limits, permissions, and authentication through a configurable external provider. This is written in Go, and can also interface with all the other services in the stack to provide a nice user experience. The `llama-stack` cli tool will call into this in some cases.
+The initial trusted infrastructure containers use system Quadlets. Arbitrary
+model-executed workspace containers will run rootlessly under the dedicated
+service account when per-user workspace orchestration is added; they must never
+inherit the infrastructure containers' privilege level.
+
+Open WebUI remains the account and conversation authority and can later delegate
+authentication to an external OIDC provider. `llama-stackd` will map those
+identities to workspace policy, asynchronous jobs, quotas, and artifacts rather
+than implementing another password database.
+
+`llama-stackd` also binds only ports that have active leases and forwards TCP
+connections to the scoped workspace target. Releasing or expiring a lease
+closes its listener. The configured pool may be permitted through `firewalld`;
+ports without active leases have no listening socket.

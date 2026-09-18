@@ -1,0 +1,93 @@
+[stack]
+user = "llama-stack"
+group = "llama-stack"
+admin_group = "llama-stack-admins"
+
+[paths]
+state = "/var/lib/llama-stack"
+cache = "/var/cache/llama-stack"
+models = "/var/lib/llama-stack/models"
+users = "/var/lib/llama-stack/users"
+artifacts = "/var/lib/llama-stack/artifacts"
+
+[gpu]
+enabled = true
+repository_url = "https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/cuda-fedora44.repo"
+driver_packages = ["nvidia-driver", "nvidia-driver-cuda"]
+toolkit_packages = ["cuda-toolkit"]
+cuda_architectures = ["75", "86"]
+
+[llama]
+repository = "https://github.com/ggml-org/llama.cpp.git"
+# llama.cpp b10936, tested with the T4/A2 mixed-GPU setup.
+revision = "790cf51aabd61763486050dec7451d9147cb7c61"
+source_directory = "/usr/local/src/llama.cpp"
+binary = "/usr/local/bin/llama-server"
+host = "0.0.0.0"
+port = 8080
+context_size = 65536
+models_max = 1
+gpu_layers = "all"
+split_mode = "layer"
+tensor_split = "1,1,1"
+idle_timeout_seconds = 900
+api_key_file = "/etc/llama-stack/secrets/llama-api-keys"
+
+[open_webui]
+enabled = true
+image = "ghcr.io/open-webui/open-webui:v0.11.3"
+host = "0.0.0.0"
+port = 8083
+secret_file = "/etc/llama-stack/secrets/open-webui-secret"
+context_compaction = true
+context_compaction_threshold = 48000
+context_compaction_token_cap = 52000
+context_compaction_retention_percent = 40
+
+[searxng]
+enabled = true
+image = "docker.io/searxng/searxng:latest"
+host = "127.0.0.1"
+port = 8082
+secret_file = "/etc/llama-stack/secrets/searxng-secret"
+
+[downloads]
+enabled = true
+image = "docker.io/library/nginx:alpine"
+host = "0.0.0.0"
+port = 8081
+directory_listing = false
+
+[toolbox]
+image = "localhost/llama-toolbox:latest"
+memory = "8g"
+cpus = 8.0
+pids = 2048
+execution_timeout_seconds = 1800
+idle_timeout_seconds = 7200
+
+[ports]
+enabled = true
+# Host-side listeners exist only while a lease is active. Limit firewall access
+# to trusted networks even when this address is 0.0.0.0.
+listen_host = "0.0.0.0"
+start = 44500
+end = 44999
+database = "/var/lib/llama-stack/resources.db"
+admin_token_file = "/etc/llama-stack/secrets/resource-admin-token"
+default_ttl_seconds = 900
+maximum_ttl_seconds = 7200
+maximum_per_run = 16
+maximum_per_user = 64
+maximum_wait_seconds = 300
+
+[jobs]
+database = "/var/lib/llama-stack/jobs.db"
+poll_interval_milliseconds = 100
+recovery_timeout_seconds = 300
+database_lock_retries = 20
+database_lock_delay_milliseconds = 5
+
+[orchestrator]
+host = "127.0.0.1"
+port = 8090
