@@ -172,7 +172,12 @@ func checkFile(name, path string, requiredMode os.FileMode) (check Check) {
 
 // checkManagedDirectories confirms that persistent stack directories exist.
 func checkManagedDirectories(cfg config.Config) (checks []Check) {
-	for _, path := range []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts} {
+	var paths []string = []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts}
+	if cfg.OpenWebUI.Enabled {
+		paths = append(paths, filepath.Join(cfg.Paths.State, "open-webui"))
+	}
+
+	for _, path := range paths {
 		var (
 			check Check = Check{Name: "Directory " + path}
 			info  os.FileInfo

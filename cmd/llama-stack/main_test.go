@@ -1,9 +1,11 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/alexflint/go-arg"
+	"github.com/z46-dev/llama-stack/internal/config"
 )
 
 // TestCommandGrammar exercises help and required nested arguments without host access.
@@ -15,6 +17,22 @@ func TestCommandGrammar(t *testing.T) {
 	}
 	if err = run([]string{"resource", "capability", "issue", "--user", "user-a"}); err == nil {
 		t.Fatalf("incomplete capability command returned %v", err)
+	}
+}
+
+// TestEnabledServiceImages covers enabled filtering and duplicate suppression.
+func TestEnabledServiceImages(t *testing.T) {
+	var (
+		cfg    config.Config
+		images []string
+	)
+
+	cfg.OpenWebUI.Service = config.Service{Enabled: true, Image: "example/web:1"}
+	cfg.SearXNG.Service = config.Service{Enabled: false, Image: "example/search:1"}
+	cfg.Downloads.Service = config.Service{Enabled: true, Image: "example/web:1"}
+
+	if images = enabledServiceImages(cfg); !reflect.DeepEqual(images, []string{"example/web:1"}) {
+		t.Fatalf("unexpected images: %v", images)
 	}
 }
 

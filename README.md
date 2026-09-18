@@ -82,6 +82,22 @@ sudo systemctl enable --now llama-stack.target
 sudo llama-stack doctor
 ```
 
+The default web endpoints are:
+
+- `http://HOST:8080` — llama.cpp native UI and OpenAI-compatible API
+- `http://HOST:8083` — Open WebUI
+- `http://HOST:8081` — generated artifact downloads
+
+On a fresh Open WebUI database, its first account is the administrator. User
+registration, approvals, connections, and model visibility are then managed
+from **Settings > Admin**. Open WebUI data is persisted beneath
+`/var/lib/llama-stack/open-webui`; do not remove that directory when updating
+the container image.
+
+Setup pre-pulls enabled service images before enabling their Quadlets. This
+keeps the large initial Open WebUI download out of systemd's startup timeout;
+the generated unit also allows 15 minutes for first-start migrations.
+
 To install rebuilt binaries and regenerate services without package or
 llama.cpp setup:
 

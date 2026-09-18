@@ -128,6 +128,7 @@ install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
     /var/cache/llama-stack \
     /var/lib/llama-stack/artifacts \
+    /var/lib/llama-stack/open-webui \
     /var/lib/llama-stack/users
 
 if [[ ! -e "$CONFIG_DIR/config.toml" ]]; then

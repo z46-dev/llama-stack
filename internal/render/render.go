@@ -251,6 +251,7 @@ EnvironmentFile=/etc/llama-stack/generated/open-webui.env
 
 [Service]
 Restart=on-failure
+TimeoutStartSec=15min
 
 [Install]
 WantedBy=llama-stack.target

@@ -63,6 +63,14 @@ func TestWriteProducesHardenedStackConfiguration(t *testing.T) {
 		t.Fatalf("service isolation missing:\n%s", contents)
 	}
 
+	if contents, err = os.ReadFile(rooted(root, "/etc/containers/systemd/llama-open-webui.container")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "TimeoutStartSec=15min") ||
+		!strings.Contains(string(contents), cfg.Paths.State+"/open-webui:/app/backend/data:Z") {
+		t.Fatalf("Open WebUI persistence or startup timeout missing:\n%s", contents)
+	}
+
 	if contents, err = os.ReadFile(rooted(root, "/etc/systemd/system/llama-stackd.service")); err != nil {
 		t.Fatal(err)
 	}

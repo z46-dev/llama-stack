@@ -185,6 +185,9 @@ func runInstall(options installOptions) (err error) {
 	if err = initializeState(cfg); err != nil {
 		return
 	}
+	if err = pullServiceImages(cfg); err != nil {
+		return
+	}
 	if err = render.Write(cfg, ""); err != nil {
 		return
 	}
@@ -267,7 +270,7 @@ func initializeState(cfg config.Config) (err error) {
 		return
 	}
 
-	for _, path := range []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts, filepath.Dir(cfg.Llama.APIKeyFile), filepath.Dir(cfg.OpenWebUI.SecretFile), filepath.Dir(cfg.SearXNG.SecretFile), filepath.Dir(cfg.Ports.AdminTokenFile), filepath.Dir(cfg.Ports.Database), filepath.Dir(cfg.Jobs.Database)} {
+	for _, path := range []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts, filepath.Join(cfg.Paths.State, "open-webui"), filepath.Dir(cfg.Llama.APIKeyFile), filepath.Dir(cfg.OpenWebUI.SecretFile), filepath.Dir(cfg.SearXNG.SecretFile), filepath.Dir(cfg.Ports.AdminTokenFile), filepath.Dir(cfg.Ports.Database), filepath.Dir(cfg.Jobs.Database)} {
 		if err = os.MkdirAll(path, 0o750); err != nil {
 			return
 		}
@@ -284,6 +287,32 @@ func initializeState(cfg config.Config) (err error) {
 	}
 	if err == nil {
 		err = ensureSecret(cfg.Ports.AdminTokenFile, "lsadmin_", uid, gid)
+	}
+
+	return
+}
+
+// pullServiceImages downloads enabled infrastructure images before systemd starts them.
+func pullServiceImages(cfg config.Config) (err error) {
+	for _, image := range enabledServiceImages(cfg) {
+		fmt.Printf("Pulling service image %s...\n", image)
+		if err = runCommand("podman", "pull", image); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+// enabledServiceImages returns each enabled infrastructure image once.
+func enabledServiceImages(cfg config.Config) (images []string) {
+	var seen map[string]bool = make(map[string]bool)
+
+	for _, service := range []config.Service{cfg.OpenWebUI.Service, cfg.SearXNG.Service, cfg.Downloads.Service} {
+		if service.Enabled && !seen[service.Image] {
+			images = append(images, service.Image)
+			seen[service.Image] = true
+		}
 	}
 
 	return
