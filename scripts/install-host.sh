@@ -121,11 +121,13 @@ if [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]]; then
 fi
 
 install -d -m 0755 -o root -g root "$CONFIG_DIR"
+install -d -m 0751 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
+    /var/lib/llama-stack
+install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
+    /var/lib/llama-stack/models
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
     /var/cache/llama-stack \
-    /var/lib/llama-stack \
     /var/lib/llama-stack/artifacts \
-    /var/lib/llama-stack/models \
     /var/lib/llama-stack/users
 
 if [[ ! -e "$CONFIG_DIR/config.toml" ]]; then

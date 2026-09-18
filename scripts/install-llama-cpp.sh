@@ -65,6 +65,10 @@ fi
 
 export PATH="$CUDA_ROOT/bin:$PATH"
 
+ln -sfn "$CUDA_ROOT/bin/nvcc" /usr/local/bin/nvcc
+printf 'export PATH=%q/bin:$PATH\n' "$CUDA_ROOT" > /etc/profile.d/llama-stack-cuda.sh
+chmod 0644 /etc/profile.d/llama-stack-cuda.sh
+
 if [[ ! -d "$SOURCE_DIRECTORY/.git" ]]; then
     git clone "$REPOSITORY" "$SOURCE_DIRECTORY"
 fi
@@ -88,6 +92,14 @@ cmake \
 
 cmake --build "$SOURCE_DIRECTORY/build" --parallel "$(nproc)"
 cmake --install "$SOURCE_DIRECTORY/build"
+
+{
+    printf '/usr/local/lib64\n'
+    if [[ -d $CUDA_ROOT/targets/x86_64-linux/lib ]]; then
+        printf '%s/targets/x86_64-linux/lib\n' "$CUDA_ROOT"
+    fi
+} > /etc/ld.so.conf.d/llama-stack.conf
+chmod 0644 /etc/ld.so.conf.d/llama-stack.conf
 ldconfig
 
 if nvidia-smi >/dev/null 2>&1; then

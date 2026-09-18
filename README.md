@@ -61,6 +61,8 @@ manual action.
 CUDA discovery does not depend on login-shell profile files: setup locates
 `nvcc` beneath `/usr/local/cuda`, passes the toolkit explicitly to CMake, and
 uses a fresh CMake cache so a failed first configuration can be retried.
+Setup also publishes `nvcc` through `/usr/local/bin` and registers the installed
+llama.cpp and CUDA library directories with the dynamic linker.
 
 For a staged first installation that does not start services:
 

@@ -41,7 +41,7 @@ type (
 	}
 	installOptions struct {
 		Config  string
-		NoStart bool `help:"install without starting services"`
+		NoStart bool `arg:"--no-start" help:"install without starting services"`
 	}
 	renderOptions struct {
 		Config string

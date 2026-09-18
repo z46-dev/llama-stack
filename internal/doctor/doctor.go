@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -148,8 +149,13 @@ func checkFile(name, path string, requiredMode os.FileMode) (check Check) {
 
 	check.Name = name
 	if info, err = os.Stat(path); err != nil {
-		check.Status = Fail
-		check.Message = fmt.Sprintf("%s: %v", path, err)
+		if errors.Is(err, os.ErrPermission) {
+			check.Status = Warn
+			check.Message = fmt.Sprintf("%s is protected; rerun doctor with sudo for a full check", path)
+		} else {
+			check.Status = Fail
+			check.Message = fmt.Sprintf("%s: %v", path, err)
+		}
 	} else if info.IsDir() {
 		check.Status = Fail
 		check.Message = fmt.Sprintf("%s is a directory", path)
