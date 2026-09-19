@@ -89,11 +89,12 @@ type (
 	}
 
 	AgentTools struct {
-		Enabled    bool   `toml:"enabled"`
-		Host       string `toml:"host"`
-		Port       int    `toml:"port"`
-		APIKeyFile string `toml:"api_key_file"`
-		MaxOutput  int    `toml:"max_output_bytes"`
+		Enabled         bool   `toml:"enabled"`
+		Host            string `toml:"host"`
+		Port            int    `toml:"port"`
+		APIKeyFile      string `toml:"api_key_file"`
+		MaxOutput       int    `toml:"max_output_bytes"`
+		RequireIdentity bool   `toml:"require_identity"`
 	}
 
 	Service struct {

@@ -194,6 +194,10 @@ easy to inspect and later expose as downloadable artifacts.
 Until Open WebUI forwards a stable user or chat identifier to direct tool
 servers, tool calls share the default persistent workspace. Keep public signup
 disabled and treat this as an administrator-trusted deployment mode.
+Direct `exec_shell_command` responses include a `workspace` field; if Open
+WebUI shows `default`, it is not forwarding identity yet. After confirming a
+stable per-user or per-chat workspace, set `agent_tools.require_identity = true`
+to reject shared fallback execution.
 
 Test the gateway independently of the model or UI with:
 
@@ -203,6 +207,12 @@ curl -sS -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   --data '{"command":"cat /etc/fedora-release; uname -m"}' \
   http://127.0.0.1:8091/v1/exec | jq
+
+curl -sS -H "Authorization: Bearer $KEY" \
+  -H 'X-User-Id: test-user-a' \
+  -H 'Content-Type: application/json' \
+  --data '{"command":"echo user-a > /workspace/identity.txt; cat /workspace/identity.txt"}' \
+  http://127.0.0.1:8091/v1/exec | jq '{workspace, output, exit_code}'
 ```
 
 This direct check must succeed before troubleshooting model behavior. Open

@@ -62,6 +62,9 @@ host = "0.0.0.0"
 port = 8091
 api_key_file = "/etc/llama-stack/secrets/agent-tools-api-key"
 max_output_bytes = 1048576
+# Set true after confirming Open WebUI forwards X-Session-Id or X-User-Id to
+# direct tool servers. When true, exec_shell_command rejects shared fallback.
+require_identity = false
 
 [searxng]
 enabled = true

@@ -28,9 +28,10 @@ type (
 	}
 
 	execResponse struct {
-		Output   string `json:"output"`
-		ExitCode int    `json:"exit_code"`
-		TimedOut bool   `json:"timed_out"`
+		Output    string `json:"output"`
+		ExitCode  int    `json:"exit_code"`
+		TimedOut  bool   `json:"timed_out"`
+		Workspace string `json:"workspace,omitempty"`
 	}
 
 	searchRequest struct {
@@ -52,7 +53,7 @@ type (
 	}
 )
 
-const openAPISpec string = `{"openapi":"3.1.0","info":{"title":"llama-stack tools","version":"1.0.0","description":"Authenticated tools backed by isolated llama-stack services."},"paths":{"/v1/exec":{"post":{"operationId":"exec_shell_command","summary":"Execute a shell command inside a persistent isolated Fedora toolbox container for this tool workspace. Returns actual stdout, stderr, exit status, and timeout state.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"command":{"type":"string","description":"Shell command or script to execute inside the toolbox. Files, installed packages, background processes, and /workspace state persist for later calls in the same tool workspace."}},"required":["command"]}}}},"responses":{"200":{"description":"Command result","content":{"application/json":{"schema":{"type":"object","properties":{"output":{"type":"string"},"exit_code":{"type":"integer"},"timed_out":{"type":"boolean"}}}}}}}}},"/v1/search":{"post":{"operationId":"web_search","summary":"Search the public web through the local read-only SearXNG service.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10,"default":5}},"required":["query"]}}}},"responses":{"200":{"description":"SearXNG search results"}}}}}}`
+const openAPISpec string = `{"openapi":"3.1.0","info":{"title":"llama-stack tools","version":"1.0.0","description":"Authenticated tools backed by isolated llama-stack services."},"paths":{"/v1/exec":{"post":{"operationId":"exec_shell_command","summary":"Execute a shell command inside a persistent isolated Fedora toolbox container for this tool workspace. Returns actual stdout, stderr, exit status, timeout state, and workspace id.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"command":{"type":"string","description":"Shell command or script to execute inside the toolbox. Files, installed packages, background processes, and /workspace state persist for later calls in the same tool workspace."}},"required":["command"]}}}},"responses":{"200":{"description":"Command result","content":{"application/json":{"schema":{"type":"object","properties":{"output":{"type":"string"},"exit_code":{"type":"integer"},"timed_out":{"type":"boolean"},"workspace":{"type":"string"}}}}}}}}},"/v1/search":{"post":{"operationId":"web_search","summary":"Search the public web through the local read-only SearXNG service.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10,"default":5}},"required":["query"]}}}},"responses":{"200":{"description":"SearXNG search results"}}}}}}`
 
 // main starts the authenticated OpenAPI tool service.
 func main() {
@@ -146,7 +147,7 @@ func (service *server) runToolbox(parent context.Context, request *http.Request,
 		process       *exec.Cmd
 		output        limitedBuffer
 		exitError     *exec.ExitError
-		key           string
+		identity      workspaceIdentity
 		containerName string
 		workspacePath string
 		err           error
@@ -156,14 +157,20 @@ func (service *server) runToolbox(parent context.Context, request *http.Request,
 	defer cancel()
 	output.remaining = service.cfg.AgentTools.MaxOutput
 
-	key = workspaceKey(request)
+	identity = identifyWorkspace(request)
+	result.Workspace = identity.Key
+	if service.cfg.AgentTools.RequireIdentity && !identity.Found {
+		result.ExitCode = -1
+		result.Output = "tool workspace identity was not forwarded; disable agent_tools.require_identity or configure Open WebUI to forward X-Session-Id or X-User-Id"
+		return
+	}
 	if workspacePath, err = service.workspacePath(request); err != nil {
 		result.ExitCode = -1
 		result.Output = err.Error()
 		return
 	}
-	containerName = toolboxContainerName(key)
-	if err = service.ensureToolboxContainer(ctx, containerName, key, workspacePath); err != nil {
+	containerName = toolboxContainerName(identity.Key)
+	if err = service.ensureToolboxContainer(ctx, containerName, identity.Key, workspacePath); err != nil {
 		result.ExitCode = -1
 		result.Output = err.Error()
 		return
@@ -222,30 +229,62 @@ func (service *server) ensureToolboxContainer(ctx context.Context, name, key, wo
 // workspacePath returns a stable host directory for files created by tool calls.
 func (service *server) workspacePath(request *http.Request) (path string, err error) {
 	var (
-		key  string
-		root string
+		identity workspaceIdentity
+		root     string
 	)
 
-	key = workspaceKey(request)
+	identity = identifyWorkspace(request)
 	root = filepath.Join(service.cfg.Paths.State, "agent-workspaces")
-	path = filepath.Join(root, key)
+	path = filepath.Join(root, identity.Key)
 	if err = os.MkdirAll(path, 0o700); err != nil {
 		err = fmt.Errorf("create tool workspace: %w", err)
 	}
 	return
 }
 
-// workspaceKey scopes persistence when Open WebUI forwards user or session identity.
-func workspaceKey(request *http.Request) (result string) {
-	var candidate string
+type workspaceIdentity struct {
+	Key    string
+	Source string
+	Found  bool
+}
 
-	candidate = request.Header.Get("X-Session-Id")
-	if candidate == "" {
-		candidate = request.Header.Get("X-User-Id")
+// identifyWorkspace scopes persistence when Open WebUI forwards user or session identity.
+func identifyWorkspace(request *http.Request) (result workspaceIdentity) {
+	var (
+		candidate string
+		headers   []string = []string{
+			"X-Session-Id",
+			"X-User-Id",
+			"X-OpenWebUI-User-Id",
+			"X-Open-WebUI-User-Id",
+			"X-User-Email",
+		}
+	)
+
+	for _, header := range headers {
+		candidate = strings.TrimSpace(request.Header.Get(header))
+		if candidate != "" {
+			result.Source = header
+			result.Found = true
+			break
+		}
 	}
 	if candidate == "" {
 		candidate = "default"
+		result.Source = "fallback"
 	}
+	result.Key = sanitizeWorkspaceKey(candidate)
+	return
+}
+
+// workspaceKey returns just the stable key for tests and callers that do not need source metadata.
+func workspaceKey(request *http.Request) (result string) {
+	result = identifyWorkspace(request).Key
+	return
+}
+
+// sanitizeWorkspaceKey makes untrusted identity headers safe for path and label use.
+func sanitizeWorkspaceKey(candidate string) (result string) {
 	for _, character := range candidate {
 		if (character >= 'a' && character <= 'z') ||
 			(character >= 'A' && character <= 'Z') ||

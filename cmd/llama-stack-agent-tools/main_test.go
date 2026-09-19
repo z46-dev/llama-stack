@@ -65,11 +65,18 @@ func TestOpenAPISpecPublishesBothTools(t *testing.T) {
 
 // TestWorkspaceKeySanitizesForwardedIdentity keeps request headers out of paths.
 func TestWorkspaceKeySanitizesForwardedIdentity(t *testing.T) {
-	var request *http.Request
+	var (
+		request  *http.Request
+		identity workspaceIdentity
+	)
 
 	request = httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{}`))
 	if workspaceKey(request) != "default" {
 		t.Fatal("missing identity should use the default workspace")
+	}
+	identity = identifyWorkspace(request)
+	if identity.Found || identity.Source != "fallback" {
+		t.Fatalf("unexpected fallback identity: %+v", identity)
 	}
 	if toolboxContainerName(workspaceKey(request)) != "llama-stack-toolbox-37a8eec1ce19687d132fe290" {
 		t.Fatalf("unexpected default container name: %s", toolboxContainerName(workspaceKey(request)))
@@ -79,9 +86,35 @@ func TestWorkspaceKeySanitizesForwardedIdentity(t *testing.T) {
 	if workspaceKey(request) != ".._user_one" {
 		t.Fatalf("unexpected sanitized user workspace: %s", workspaceKey(request))
 	}
+	identity = identifyWorkspace(request)
+	if !identity.Found || identity.Source != "X-User-Id" {
+		t.Fatalf("unexpected user identity: %+v", identity)
+	}
 
 	request.Header.Set("X-Session-Id", "chat:abc/123")
 	if workspaceKey(request) != "chat_abc_123" {
 		t.Fatalf("unexpected sanitized session workspace: %s", workspaceKey(request))
+	}
+	identity = identifyWorkspace(request)
+	if !identity.Found || identity.Source != "X-Session-Id" {
+		t.Fatalf("unexpected session identity: %+v", identity)
+	}
+}
+
+// TestRequireIdentityFailsClosed prevents accidental multi-user workspace sharing.
+func TestRequireIdentityFailsClosed(t *testing.T) {
+	var (
+		service  *server = newServer(config.Config{AgentTools: config.AgentTools{RequireIdentity: true}}, "test-key")
+		request  *http.Request
+		response execResponse
+	)
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{}`))
+	response = service.runToolbox(context.Background(), request, "true")
+	if response.ExitCode != -1 || !strings.Contains(response.Output, "workspace identity was not forwarded") {
+		t.Fatalf("expected identity failure, got %+v", response)
+	}
+	if response.Workspace != "default" {
+		t.Fatalf("unexpected fallback workspace in response: %+v", response)
 	}
 }
