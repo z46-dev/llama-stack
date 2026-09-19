@@ -158,10 +158,10 @@ approved user can ask the model to invoke the enabled tools.
 Open WebUI does not inherit llama.cpp's internal tools. The stack therefore
 runs `llama-agent-tools.service`, an authenticated OpenAPI gateway which Open
 WebUI registers automatically. It provides `exec_shell_command`, which runs in
-a fresh resource-limited toolbox container, and read-only `web_search` through
-SearXNG. The gateway is reachable from the Open WebUI container through
-`host.containers.internal`, requires a generated bearer key, and its port must
-not be opened in firewalld.
+a persistent resource-limited toolbox container with files under `/workspace`,
+and read-only `web_search` through SearXNG. The gateway is reachable from the
+Open WebUI container through `host.containers.internal`, requires a generated
+bearer key, and its port must not be opened in firewalld.
 
 On fresh Open WebUI databases, **llama-stack tools** is selected automatically
 for new chats. Verify that it exposes only `exec_shell_command` and
@@ -176,6 +176,24 @@ Use exec_shell_command exactly once to run:
 printf 'TOOL_EXECUTION_CONFIRMED\n'; cat /etc/fedora-release; uname -m
 Return only the actual tool output.
 ```
+
+Then verify container and workspace persistence:
+
+```text
+Use exec_shell_command to run:
+echo 'hello from the model' > /workspace/test.txt
+Then call exec_shell_command again to run:
+cat /workspace/test.txt
+Return only the actual tool output.
+```
+
+Longer tasks can keep background processes alive inside that toolbox container
+between tool calls. Files should still be written under `/workspace` so they are
+easy to inspect and later expose as downloadable artifacts.
+
+Until Open WebUI forwards a stable user or chat identifier to direct tool
+servers, tool calls share the default persistent workspace. Keep public signup
+disabled and treat this as an administrator-trusted deployment mode.
 
 Test the gateway independently of the model or UI with:
 

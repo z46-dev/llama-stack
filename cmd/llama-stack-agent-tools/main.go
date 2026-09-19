@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -45,11 +48,11 @@ type (
 		cfg        config.Config
 		apiKey     string
 		httpClient *http.Client
-		run        func(context.Context, string) execResponse
+		run        func(context.Context, *http.Request, string) execResponse
 	}
 )
 
-const openAPISpec string = `{"openapi":"3.1.0","info":{"title":"llama-stack tools","version":"1.0.0","description":"Authenticated tools backed by isolated llama-stack services."},"paths":{"/v1/exec":{"post":{"operationId":"exec_shell_command","summary":"Execute a shell command inside a fresh isolated Fedora toolbox container. Returns actual stdout, stderr, exit status, and timeout state.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"command":{"type":"string","description":"Shell command or script to execute inside the toolbox."}},"required":["command"]}}}},"responses":{"200":{"description":"Command result","content":{"application/json":{"schema":{"type":"object","properties":{"output":{"type":"string"},"exit_code":{"type":"integer"},"timed_out":{"type":"boolean"}}}}}}}}},"/v1/search":{"post":{"operationId":"web_search","summary":"Search the public web through the local read-only SearXNG service.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10,"default":5}},"required":["query"]}}}},"responses":{"200":{"description":"SearXNG search results"}}}}}}`
+const openAPISpec string = `{"openapi":"3.1.0","info":{"title":"llama-stack tools","version":"1.0.0","description":"Authenticated tools backed by isolated llama-stack services."},"paths":{"/v1/exec":{"post":{"operationId":"exec_shell_command","summary":"Execute a shell command inside a persistent isolated Fedora toolbox container for this tool workspace. Returns actual stdout, stderr, exit status, and timeout state.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"command":{"type":"string","description":"Shell command or script to execute inside the toolbox. Files, installed packages, background processes, and /workspace state persist for later calls in the same tool workspace."}},"required":["command"]}}}},"responses":{"200":{"description":"Command result","content":{"application/json":{"schema":{"type":"object","properties":{"output":{"type":"string"},"exit_code":{"type":"integer"},"timed_out":{"type":"boolean"}}}}}}}}},"/v1/search":{"post":{"operationId":"web_search","summary":"Search the public web through the local read-only SearXNG service.","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10,"default":5}},"required":["query"]}}}},"responses":{"200":{"description":"SearXNG search results"}}}}}}`
 
 // main starts the authenticated OpenAPI tool service.
 func main() {
@@ -132,28 +135,42 @@ func (service *server) execute(writer http.ResponseWriter, request *http.Request
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, service.run(request.Context(), input.Command))
+	writeJSON(writer, http.StatusOK, service.run(request.Context(), request, input.Command))
 }
 
-// runToolbox executes one command in a disposable, resource-limited container.
-func (service *server) runToolbox(parent context.Context, command string) (result execResponse) {
+// runToolbox executes one command inside the persistent container for this workspace.
+func (service *server) runToolbox(parent context.Context, request *http.Request, command string) (result execResponse) {
 	var (
-		ctx       context.Context
-		cancel    context.CancelFunc
-		process   *exec.Cmd
-		output    limitedBuffer
-		exitError *exec.ExitError
-		err       error
+		ctx           context.Context
+		cancel        context.CancelFunc
+		process       *exec.Cmd
+		output        limitedBuffer
+		exitError     *exec.ExitError
+		key           string
+		containerName string
+		workspacePath string
+		err           error
 	)
 
 	ctx, cancel = context.WithTimeout(parent, time.Duration(service.cfg.Toolbox.ExecutionTimeout)*time.Second)
 	defer cancel()
 	output.remaining = service.cfg.AgentTools.MaxOutput
-	process = exec.CommandContext(ctx, "podman", "--cgroup-manager=cgroupfs", "run", "--rm", "--pull=never",
-		"--memory", service.cfg.Toolbox.Memory,
-		"--cpus", strconv.FormatFloat(service.cfg.Toolbox.CPUs, 'f', -1, 64),
-		"--pids-limit", strconv.Itoa(service.cfg.Toolbox.PIDs),
-		service.cfg.Toolbox.Image, "bash", "-lc", command)
+
+	key = workspaceKey(request)
+	if workspacePath, err = service.workspacePath(request); err != nil {
+		result.ExitCode = -1
+		result.Output = err.Error()
+		return
+	}
+	containerName = toolboxContainerName(key)
+	if err = service.ensureToolboxContainer(ctx, containerName, key, workspacePath); err != nil {
+		result.ExitCode = -1
+		result.Output = err.Error()
+		return
+	}
+
+	process = exec.CommandContext(ctx, "podman", "--cgroup-manager=cgroupfs", "exec", "--workdir", "/workspace",
+		containerName, "bash", "-lc", command)
 	process.Stdout = &output
 	process.Stderr = &output
 	err = process.Run()
@@ -170,6 +187,91 @@ func (service *server) runToolbox(parent context.Context, command string) (resul
 		}
 	}
 	result.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded)
+	return
+}
+
+// ensureToolboxContainer creates or reuses the long-lived toolbox for a workspace.
+func (service *server) ensureToolboxContainer(ctx context.Context, name, key, workspacePath string) (err error) {
+	var (
+		inspect *exec.Cmd
+		run     *exec.Cmd
+		state   []byte
+	)
+
+	inspect = exec.CommandContext(ctx, "podman", "--cgroup-manager=cgroupfs", "inspect", "--format", "{{.State.Running}}", name)
+	if state, err = inspect.Output(); err == nil && strings.TrimSpace(string(state)) == "true" {
+		return
+	}
+
+	run = exec.CommandContext(ctx, "podman", "--cgroup-manager=cgroupfs", "run", "-d", "--replace", "--pull=never",
+		"--name", name,
+		"--label", "llama-stack.toolbox=true",
+		"--label", "llama-stack.workspace="+key,
+		"--memory", service.cfg.Toolbox.Memory,
+		"--cpus", strconv.FormatFloat(service.cfg.Toolbox.CPUs, 'f', -1, 64),
+		"--pids-limit", strconv.Itoa(service.cfg.Toolbox.PIDs),
+		"--volume", workspacePath+":/workspace:Z",
+		"--workdir", "/workspace",
+		service.cfg.Toolbox.Image, "sleep", "infinity")
+	if output, runErr := run.CombinedOutput(); runErr != nil {
+		err = fmt.Errorf("start toolbox container: %w: %s", runErr, strings.TrimSpace(string(output)))
+	}
+	return
+}
+
+// workspacePath returns a stable host directory for files created by tool calls.
+func (service *server) workspacePath(request *http.Request) (path string, err error) {
+	var (
+		key  string
+		root string
+	)
+
+	key = workspaceKey(request)
+	root = filepath.Join(service.cfg.Paths.State, "agent-workspaces")
+	path = filepath.Join(root, key)
+	if err = os.MkdirAll(path, 0o700); err != nil {
+		err = fmt.Errorf("create tool workspace: %w", err)
+	}
+	return
+}
+
+// workspaceKey scopes persistence when Open WebUI forwards user or session identity.
+func workspaceKey(request *http.Request) (result string) {
+	var candidate string
+
+	candidate = request.Header.Get("X-Session-Id")
+	if candidate == "" {
+		candidate = request.Header.Get("X-User-Id")
+	}
+	if candidate == "" {
+		candidate = "default"
+	}
+	for _, character := range candidate {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' {
+			result += string(character)
+		} else {
+			result += "_"
+		}
+	}
+	if result == "" || result == "." || result == ".." {
+		result = "default"
+	}
+	return
+}
+
+// toolboxContainerName gives Podman a short stable name for the workspace.
+func toolboxContainerName(key string) (result string) {
+	var (
+		sum     [32]byte
+		encoded string
+	)
+
+	sum = sha256.Sum256([]byte(key))
+	encoded = hex.EncodeToString(sum[:])
+	result = "llama-stack-toolbox-" + encoded[:24]
 	return
 }
 

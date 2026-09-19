@@ -20,7 +20,7 @@ func TestToolRoutesRequireAuthenticationAndReturnRealRunnerOutput(t *testing.T) 
 		decoded  execResponse
 		err      error
 	)
-	service.run = func(_ context.Context, command string) (result execResponse) {
+	service.run = func(_ context.Context, _ *http.Request, command string) (result execResponse) {
 		result = execResponse{Output: "ran: " + command, ExitCode: 0}
 		return
 	}
@@ -57,7 +57,31 @@ func TestOpenAPISpecPublishesBothTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(openAPISpec, `"operationId":"exec_shell_command"`) ||
-		!strings.Contains(openAPISpec, `"operationId":"web_search"`) {
+		!strings.Contains(openAPISpec, `"operationId":"web_search"`) ||
+		!strings.Contains(openAPISpec, `persistent isolated Fedora toolbox container`) {
 		t.Fatal("OpenAPI document does not publish both tools")
+	}
+}
+
+// TestWorkspaceKeySanitizesForwardedIdentity keeps request headers out of paths.
+func TestWorkspaceKeySanitizesForwardedIdentity(t *testing.T) {
+	var request *http.Request
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/exec", strings.NewReader(`{}`))
+	if workspaceKey(request) != "default" {
+		t.Fatal("missing identity should use the default workspace")
+	}
+	if toolboxContainerName(workspaceKey(request)) != "llama-stack-toolbox-37a8eec1ce19687d132fe290" {
+		t.Fatalf("unexpected default container name: %s", toolboxContainerName(workspaceKey(request)))
+	}
+
+	request.Header.Set("X-User-Id", "../user one")
+	if workspaceKey(request) != ".._user_one" {
+		t.Fatalf("unexpected sanitized user workspace: %s", workspaceKey(request))
+	}
+
+	request.Header.Set("X-Session-Id", "chat:abc/123")
+	if workspaceKey(request) != "chat_abc_123" {
+		t.Fatalf("unexpected sanitized session workspace: %s", workspaceKey(request))
 	}
 }
