@@ -66,6 +66,8 @@ fi
 export PATH="$CUDA_ROOT/bin:$PATH"
 
 ln -sfn "$CUDA_ROOT/bin/nvcc" /usr/local/bin/nvcc
+# The login shell must expand PATH later, not while this file is generated.
+# shellcheck disable=SC2016
 printf 'export PATH=%q/bin:$PATH\n' "$CUDA_ROOT" > /etc/profile.d/llama-stack-cuda.sh
 chmod 0644 /etc/profile.d/llama-stack-cuda.sh
 

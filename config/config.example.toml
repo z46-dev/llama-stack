@@ -35,6 +35,8 @@ api_key_file = "/etc/llama-stack/secrets/llama-api-keys"
 jinja = true
 tools = "all"
 mcp_servers_file = "/etc/llama-stack/generated/mcp.json"
+models_preset_file = "/var/lib/llama-stack/generated/model-presets.ini"
+model_profiles_file = "/usr/share/llama-stack/model-profiles.toml"
 
 [open_webui]
 enabled = true

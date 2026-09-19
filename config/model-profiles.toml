@@ -1,0 +1,8 @@
+# Compatibility profiles are applied only when model_glob matches an installed
+# GGUF file. Models without a match continue using their embedded metadata.
+
+[[profile]]
+name = "smollm3-tools"
+model_glob = "SmolLM3-3B-128K-*.gguf"
+chat_template_file = "/usr/share/llama-stack/templates/HuggingFaceTB-SmolLM3-3B-tools.jinja"
+chat_template_kwargs = { enable_thinking = false }

@@ -65,13 +65,14 @@ func TestLlamaServerArgsIncludesTooling(t *testing.T) {
 	cfg.Llama.Jinja = true
 	cfg.Llama.Tools = "all"
 	cfg.Llama.MCPServersFile = "/etc/llama-stack/generated/mcp.json"
+	cfg.Llama.ModelsPresetFile = "/var/lib/llama-stack/generated/model-presets.ini"
 	cfg.Toolbox.Enabled = true
 	cfg.Toolbox.Runtime = "podman"
 	cfg.Toolbox.Image = "localhost/llama-toolbox:latest"
 	cfg.SearXNG.Enabled = true
 	args = llamaServerArgs(cfg)
 
-	for _, expected := range []string{"--jinja", "--tools", "all", "--tools-runtime", "podman:localhost/llama-toolbox:latest", "--mcp-servers-config", cfg.Llama.MCPServersFile} {
+	for _, expected := range []string{"--models-preset", cfg.Llama.ModelsPresetFile, "--jinja", "--tools", "all", "--tools-runtime", "podman:localhost/llama-toolbox:latest", "--mcp-servers-config", cfg.Llama.MCPServersFile} {
 		if !slices.Contains(args, expected) {
 			t.Fatalf("missing %q in arguments: %v", expected, args)
 		}

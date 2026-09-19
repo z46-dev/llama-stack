@@ -19,6 +19,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/z46-dev/llama-stack/internal/config"
 	"github.com/z46-dev/llama-stack/internal/doctor"
+	"github.com/z46-dev/llama-stack/internal/modelprofile"
 	"github.com/z46-dev/llama-stack/internal/privilege"
 	"github.com/z46-dev/llama-stack/internal/render"
 	"github.com/z46-dev/llama-stack/internal/resourceapi"
@@ -27,8 +28,8 @@ import (
 var version string = "development"
 
 const (
-	toolboxBuildContext string = "/usr/share/llama-stack/toolbox"
-	toolboxRuntimePath  string = "/run/llama-stack"
+	toolboxBuildContext         string = "/usr/share/llama-stack/toolbox"
+	toolboxRuntimePath          string = "/run/llama-stack"
 	rootlessPodmanConfiguration string = `[engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
@@ -646,12 +647,19 @@ func listModels(cfg config.Config) (err error) {
 // runLlamaServer replaces the helper process with llama-server using validated configuration.
 func runLlamaServer() (err error) {
 	var (
-		cfg config.Config
-		env []string
+		cfg             config.Config
+		env             []string
+		matchedProfiles int
 	)
 
 	if cfg, err = config.Load(config.Path()); err != nil {
 		return
+	}
+	if matchedProfiles, err = modelprofile.Render(cfg.Llama.ModelProfilesFile, cfg.Paths.Models, cfg.Llama.ModelsPresetFile); err != nil {
+		return
+	}
+	if matchedProfiles > 0 {
+		fmt.Printf("Applied compatibility profiles to %d model(s).\n", matchedProfiles)
 	}
 
 	env = append(os.Environ(), "LLAMA_CACHE="+cfg.Paths.Cache)
@@ -666,6 +674,7 @@ func llamaServerArgs(cfg config.Config) (args []string) {
 		"--host", cfg.Llama.Host,
 		"--port", strconv.Itoa(cfg.Llama.Port),
 		"--models-dir", cfg.Paths.Models,
+		"--models-preset", cfg.Llama.ModelsPresetFile,
 		"--models-max", strconv.Itoa(cfg.Llama.ModelsMax),
 		"--ctx-size", strconv.Itoa(cfg.Llama.ContextSize),
 		"--n-gpu-layers", cfg.Llama.GPULayers,

@@ -151,6 +151,29 @@ server. Open WebUI users do not receive host shell access: command execution
 occurs inside the toolbox container. Keep public signup disabled because every
 approved user can ask the model to invoke the enabled tools.
 
+Some GGUF files contain chat templates that can generate tool-call text but do
+not expose standard OpenAI `tools` or structured `tool_calls`. At server start,
+llama-stack matches installed filenames against the TOML catalog at
+`/usr/share/llama-stack/model-profiles.toml` and generates native llama.cpp
+router presets. The included SmolLM3 profile installs a tool-aware template,
+disables extended thinking by default for agent work, and leaves unmatched
+models on their embedded templates. Change `model_profiles_file` in
+`/etc/llama-stack/config.toml` to maintain a site-specific catalog.
+
+After importing SmolLM3, verify the selected parser and a real tool invocation:
+
+```bash
+sudo systemctl restart llama-server.service
+curl -sS -H "Authorization: Bearer $(sudo head -n1 /etc/llama-stack/secrets/llama-api-keys)" \
+  'http://127.0.0.1:8080/props?model=SmolLM3-3B-128K-Q4_K_M' |
+  jq '{chat_format, chat_template_tool_use}'
+```
+
+`chat_format` must no longer be `null`. A request for
+`cat /etc/fedora-release` through `exec_shell_command` should then create a
+structured tool call and execute inside the toolbox rather than inventing its
+output.
+
 ## Agent port leases
 
 `llama-stackd` owns the shared TCP port pool configured under `[ports]`. Ports

@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	DefaultPath       = "/etc/llama-stack/config.toml"
-	DefaultAdminGroup = "llama-stack-admins"
+	DefaultPath              = "/etc/llama-stack/config.toml"
+	DefaultAdminGroup        = "llama-stack-admins"
+	DefaultModelProfilesFile = "/usr/share/llama-stack/model-profiles.toml"
 )
 
 type (
@@ -54,22 +55,24 @@ type (
 	}
 
 	Llama struct {
-		Repository      string `toml:"repository"`
-		Revision        string `toml:"revision"`
-		SourceDirectory string `toml:"source_directory"`
-		Binary          string `toml:"binary"`
-		Host            string `toml:"host"`
-		Port            int    `toml:"port"`
-		ContextSize     int    `toml:"context_size"`
-		ModelsMax       int    `toml:"models_max"`
-		GPULayers       string `toml:"gpu_layers"`
-		SplitMode       string `toml:"split_mode"`
-		TensorSplit     string `toml:"tensor_split"`
-		IdleTimeout     int    `toml:"idle_timeout_seconds"`
-		APIKeyFile      string `toml:"api_key_file"`
-		Jinja           bool   `toml:"jinja"`
-		Tools           string `toml:"tools"`
-		MCPServersFile  string `toml:"mcp_servers_file"`
+		Repository        string `toml:"repository"`
+		Revision          string `toml:"revision"`
+		SourceDirectory   string `toml:"source_directory"`
+		Binary            string `toml:"binary"`
+		Host              string `toml:"host"`
+		Port              int    `toml:"port"`
+		ContextSize       int    `toml:"context_size"`
+		ModelsMax         int    `toml:"models_max"`
+		GPULayers         string `toml:"gpu_layers"`
+		SplitMode         string `toml:"split_mode"`
+		TensorSplit       string `toml:"tensor_split"`
+		IdleTimeout       int    `toml:"idle_timeout_seconds"`
+		APIKeyFile        string `toml:"api_key_file"`
+		Jinja             bool   `toml:"jinja"`
+		Tools             string `toml:"tools"`
+		MCPServersFile    string `toml:"mcp_servers_file"`
+		ModelsPresetFile  string `toml:"models_preset_file"`
+		ModelProfilesFile string `toml:"model_profiles_file"`
 	}
 
 	OpenWebUI struct {
@@ -143,6 +146,12 @@ func Load(path string) (cfg Config, err error) {
 		err = fmt.Errorf("decode %s: %w", path, err)
 		return
 	}
+	if cfg.Llama.ModelsPresetFile == "" {
+		cfg.Llama.ModelsPresetFile = filepath.Join(cfg.Paths.State, "generated", "model-presets.ini")
+	}
+	if cfg.Llama.ModelProfilesFile == "" {
+		cfg.Llama.ModelProfilesFile = DefaultModelProfilesFile
+	}
 
 	err = cfg.Validate()
 	return
@@ -176,7 +185,8 @@ func (cfg Config) Validate() (err error) {
 	}
 
 	if !filepath.IsAbs(cfg.Llama.Binary) || !filepath.IsAbs(cfg.Llama.APIKeyFile) ||
-		!filepath.IsAbs(cfg.Llama.MCPServersFile) ||
+		!filepath.IsAbs(cfg.Llama.MCPServersFile) || !filepath.IsAbs(cfg.Llama.ModelsPresetFile) ||
+		!filepath.IsAbs(cfg.Llama.ModelProfilesFile) ||
 		!filepath.IsAbs(cfg.OpenWebUI.SecretFile) || !filepath.IsAbs(cfg.SearXNG.SecretFile) ||
 		!filepath.IsAbs(cfg.Ports.Database) || !filepath.IsAbs(cfg.Ports.AdminTokenFile) ||
 		!filepath.IsAbs(cfg.Jobs.Database) {
