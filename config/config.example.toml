@@ -44,6 +44,10 @@ image = "ghcr.io/open-webui/open-webui:v0.11.3"
 host = "0.0.0.0"
 port = 8083
 secret_file = "/etc/llama-stack/secrets/open-webui-secret"
+# Keep the default tool list small enough for local models. The llama-stack
+# OpenAPI tools are selected explicitly from a chat's Tools menu.
+builtin_tools = false
+function_calling = "native"
 context_compaction = true
 context_compaction_threshold = 48000
 context_compaction_token_cap = 52000

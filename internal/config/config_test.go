@@ -25,6 +25,9 @@ func TestExampleConfiguration(t *testing.T) {
 	if !cfg.OpenWebUI.ContextCompaction {
 		t.Fatal("context compaction must be enabled in the example")
 	}
+	if cfg.OpenWebUI.BuiltinTools || cfg.OpenWebUI.FunctionCalling != "native" {
+		t.Fatal("Open WebUI must default to focused native tool calling")
+	}
 	if !cfg.Toolbox.Enabled || cfg.Toolbox.Runtime != "podman" || !cfg.Llama.Jinja {
 		t.Fatal("toolbox and Jinja support must be enabled in the example")
 	}
@@ -55,7 +58,9 @@ func TestLegacyConfigurationReceivesModelProfileDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(string(contents), "\n") {
-		if !strings.HasPrefix(line, "models_preset_file =") && !strings.HasPrefix(line, "model_profiles_file =") {
+		if !strings.HasPrefix(line, "models_preset_file =") &&
+			!strings.HasPrefix(line, "model_profiles_file =") &&
+			!strings.HasPrefix(line, "function_calling =") {
 			filtered = append(filtered, line)
 		}
 	}
@@ -68,6 +73,9 @@ func TestLegacyConfigurationReceivesModelProfileDefaults(t *testing.T) {
 	if cfg.Llama.ModelsPresetFile != filepath.Join(cfg.Paths.State, "generated", "model-presets.ini") ||
 		cfg.Llama.ModelProfilesFile != DefaultModelProfilesFile {
 		t.Fatal("legacy configuration did not receive model compatibility defaults")
+	}
+	if cfg.OpenWebUI.FunctionCalling != "native" {
+		t.Fatal("legacy configuration did not receive native function calling default")
 	}
 }
 

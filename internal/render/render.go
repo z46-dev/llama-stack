@@ -112,6 +112,8 @@ func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 		"ENABLE_OPENAI_API=true",
 		fmt.Sprintf("OPENAI_API_BASE_URL=http://host.containers.internal:%d/v1", cfg.Llama.Port),
 		"OPENAI_API_KEY=" + firstLine(string(apiKey)),
+		"DEFAULT_MODEL_METADATA=" + openWebUIDefaultMetadata(cfg),
+		"DEFAULT_MODEL_PARAMS=" + openWebUIDefaultParameters(cfg),
 		"ENABLE_CONTEXT_COMPACTION=" + strconv.FormatBool(cfg.OpenWebUI.ContextCompaction),
 		"CONTEXT_COMPACTION_TOKEN_THRESHOLD=" + strconv.Itoa(cfg.OpenWebUI.ContextCompactionThreshold),
 		"CONTEXT_COMPACTION_TOKEN_CAP=" + strconv.Itoa(cfg.OpenWebUI.ContextCompactionTokenCap),
@@ -147,6 +149,22 @@ func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 
 	err = writeAtomic(rooted(root, "/etc/llama-stack/generated/open-webui.env"), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 	return
+}
+
+// openWebUIDefaultMetadata keeps unrelated built-in tools out of local model prompts.
+func openWebUIDefaultMetadata(cfg config.Config) string {
+	var encoded []byte
+	encoded, _ = json.Marshal(map[string]any{
+		"capabilities": map[string]bool{"builtin_tools": cfg.OpenWebUI.BuiltinTools},
+	})
+	return string(encoded)
+}
+
+// openWebUIDefaultParameters selects structured provider-native tool calls.
+func openWebUIDefaultParameters(cfg config.Config) string {
+	var encoded []byte
+	encoded, _ = json.Marshal(map[string]string{"function_calling": cfg.OpenWebUI.FunctionCalling})
+	return string(encoded)
 }
 
 // writeSearxngSettings creates a JSON-enabled search service configuration.
@@ -262,8 +280,8 @@ User=%s
 Group=%s
 Environment=LLAMA_STACK_CONFIG=/etc/llama-stack/config.toml
 Environment=HOME=%s
-Environment=XDG_RUNTIME_DIR=/run/llama-stack-tools
-RuntimeDirectory=llama-stack-tools
+Environment=XDG_RUNTIME_DIR=/run/llama-stack
+RuntimeDirectory=llama-stack
 RuntimeDirectoryMode=0700
 Delegate=yes
 ExecStart=/usr/local/libexec/llama-stack/llama-stack-agent-tools
@@ -273,7 +291,7 @@ TimeoutStopSec=30
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=%s %s
+ReadWritePaths=%s %s /run/llama-stack
 
 [Install]
 WantedBy=llama-stack.target

@@ -79,6 +79,8 @@ type (
 	OpenWebUI struct {
 		Service
 		SecretFile                 string `toml:"secret_file"`
+		BuiltinTools               bool   `toml:"builtin_tools"`
+		FunctionCalling            string `toml:"function_calling"`
 		ContextCompaction          bool   `toml:"context_compaction"`
 		ContextCompactionThreshold int    `toml:"context_compaction_threshold"`
 		ContextCompactionTokenCap  int    `toml:"context_compaction_token_cap"`
@@ -161,6 +163,9 @@ func Load(path string) (cfg Config, err error) {
 	if cfg.Llama.ModelProfilesFile == "" {
 		cfg.Llama.ModelProfilesFile = DefaultModelProfilesFile
 	}
+	if cfg.OpenWebUI.FunctionCalling == "" {
+		cfg.OpenWebUI.FunctionCalling = "native"
+	}
 
 	err = cfg.Validate()
 	return
@@ -240,6 +245,10 @@ func (cfg Config) Validate() (err error) {
 
 	if cfg.OpenWebUI.ContextCompactionThreshold >= cfg.Llama.ContextSize {
 		err = errors.New("context compaction threshold must be below llama context size")
+		return
+	}
+	if cfg.OpenWebUI.FunctionCalling != "native" && cfg.OpenWebUI.FunctionCalling != "legacy" {
+		err = errors.New("open_webui.function_calling must be native or legacy")
 		return
 	}
 
