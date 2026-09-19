@@ -153,10 +153,17 @@ func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 
 // openWebUIDefaultMetadata keeps unrelated built-in tools out of local model prompts.
 func openWebUIDefaultMetadata(cfg config.Config) string {
+	var metadata map[string]any
 	var encoded []byte
-	encoded, _ = json.Marshal(map[string]any{
+
+	metadata = map[string]any{
 		"capabilities": map[string]bool{"builtin_tools": cfg.OpenWebUI.BuiltinTools},
-	})
+	}
+	if cfg.OpenWebUI.AutoSelectTools && cfg.AgentTools.Enabled {
+		metadata["toolIds"] = []string{"direct_server:0"}
+	}
+
+	encoded, _ = json.Marshal(metadata)
 	return string(encoded)
 }
 

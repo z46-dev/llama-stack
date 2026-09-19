@@ -80,6 +80,7 @@ type (
 		Service
 		SecretFile                 string `toml:"secret_file"`
 		BuiltinTools               bool   `toml:"builtin_tools"`
+		AutoSelectTools            bool   `toml:"auto_select_tools"`
 		FunctionCalling            string `toml:"function_calling"`
 		ContextCompaction          bool   `toml:"context_compaction"`
 		ContextCompactionThreshold int    `toml:"context_compaction_threshold"`
@@ -153,7 +154,9 @@ type (
 
 // Load reads and validates the stack configuration at path.
 func Load(path string) (cfg Config, err error) {
-	if _, err = toml.DecodeFile(path, &cfg); err != nil {
+	var metadata toml.MetaData
+
+	if metadata, err = toml.DecodeFile(path, &cfg); err != nil {
 		err = fmt.Errorf("decode %s: %w", path, err)
 		return
 	}
@@ -165,6 +168,9 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if cfg.OpenWebUI.FunctionCalling == "" {
 		cfg.OpenWebUI.FunctionCalling = "native"
+	}
+	if !metadata.IsDefined("open_webui", "auto_select_tools") {
+		cfg.OpenWebUI.AutoSelectTools = true
 	}
 
 	err = cfg.Validate()

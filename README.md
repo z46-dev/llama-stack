@@ -163,11 +163,13 @@ SearXNG. The gateway is reachable from the Open WebUI container through
 `host.containers.internal`, requires a generated bearer key, and its port must
 not be opened in firewalld.
 
-In Open WebUI, select Qwen2.5, open the **Tools** menu for the chat, enable
-**llama-stack tools**, and verify that it exposes only `exec_shell_command` and
+On fresh Open WebUI databases, **llama-stack tools** is selected automatically
+for new chats. Verify that it exposes only `exec_shell_command` and
 `web_search`. Native function calling is the default and Open WebUI's large
 built-in tool bundle is disabled by default so smaller local models are not
-overwhelmed with unrelated choices. Then test with:
+overwhelmed with unrelated choices. Set `open_webui.auto_select_tools = false`
+if you prefer to enable the gateway manually from a chat's **Tools** menu. Then
+test with:
 
 ```text
 Use exec_shell_command exactly once to run:

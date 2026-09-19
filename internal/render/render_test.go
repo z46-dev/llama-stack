@@ -48,7 +48,7 @@ func TestWriteProducesHardenedStackConfiguration(t *testing.T) {
 	if !strings.Contains(string(contents), "ENABLE_CONTEXT_COMPACTION=true") ||
 		!strings.Contains(string(contents), "CONTEXT_COMPACTION_TOKEN_THRESHOLD=48000") ||
 		!strings.Contains(string(contents), "OPENAI_API_KEY=sk-test") ||
-		!strings.Contains(string(contents), `DEFAULT_MODEL_METADATA={"capabilities":{"builtin_tools":false}}`) ||
+		!strings.Contains(string(contents), `DEFAULT_MODEL_METADATA={"capabilities":{"builtin_tools":false},"toolIds":["direct_server:0"]}`) ||
 		!strings.Contains(string(contents), `DEFAULT_MODEL_PARAMS={"function_calling":"native"}`) ||
 		!strings.Contains(string(contents), "WEB_SEARCH_ENGINE=searxng") ||
 		!strings.Contains(string(contents), "TOOL_SERVER_CONNECTIONS=") ||
