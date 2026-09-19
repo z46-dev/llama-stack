@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/alexflint/go-arg"
@@ -17,6 +18,30 @@ func TestCommandGrammar(t *testing.T) {
 	}
 	if err = run([]string{"resource", "capability", "issue", "--user", "user-a"}); err == nil {
 		t.Fatalf("incomplete capability command returned %v", err)
+	}
+}
+
+// TestLlamaServerArgsIncludesTooling protects the configured agent runtime.
+func TestLlamaServerArgsIncludesTooling(t *testing.T) {
+	var (
+		cfg  config.Config
+		args []string
+	)
+
+	cfg.Llama.Binary = "/usr/local/bin/llama-server"
+	cfg.Llama.Jinja = true
+	cfg.Llama.Tools = "all"
+	cfg.Llama.MCPServersFile = "/etc/llama-stack/generated/mcp.json"
+	cfg.Toolbox.Enabled = true
+	cfg.Toolbox.Runtime = "podman"
+	cfg.Toolbox.Image = "localhost/llama-toolbox:latest"
+	cfg.SearXNG.Enabled = true
+	args = llamaServerArgs(cfg)
+
+	for _, expected := range []string{"--jinja", "--tools", "all", "--tools-runtime", "podman:localhost/llama-toolbox:latest", "--mcp-servers-config", cfg.Llama.MCPServersFile} {
+		if !slices.Contains(args, expected) {
+			t.Fatalf("missing %q in arguments: %v", expected, args)
+		}
 	}
 }
 

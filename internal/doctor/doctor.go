@@ -46,6 +46,10 @@ func Run(cfg config.Config) (report Report) {
 	report.Checks = append(report.Checks, checkFile("Open WebUI secret", cfg.OpenWebUI.SecretFile, 0o400))
 	report.Checks = append(report.Checks, checkFile("SearXNG secret", cfg.SearXNG.SecretFile, 0o400))
 	report.Checks = append(report.Checks, checkFile("Resource administrator token", cfg.Ports.AdminTokenFile, 0o400))
+	if cfg.SearXNG.Enabled {
+		report.Checks = append(report.Checks, checkFile("Search MCP server", "/usr/local/libexec/llama-stack/llama-stack-search-mcp", 0o111))
+		report.Checks = append(report.Checks, checkFile("MCP server configuration", cfg.Llama.MCPServersFile, 0o400))
+	}
 	report.Checks = append(report.Checks, checkManagedDirectories(cfg)...)
 	report.Checks = append(report.Checks, checkLlamaDevices(cfg.Llama.Binary))
 	report.Checks = append(report.Checks, checkService("llama-server.service"))

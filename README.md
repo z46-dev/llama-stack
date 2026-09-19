@@ -25,6 +25,7 @@ In my homelab setup, I have two NVIDIA A2 GPUs and a T4 for a total of 48GB of V
 - Podman Quadlets to give each "user" their own container in which the models may work.
 - A read-only exports service for generated artifacts
 - SearXNG for web searches through a Podman Quadlet.
+- A read-only SearXNG MCP server and an isolated command-execution toolbox
 - Persistent, capability-scoped TCP port leasing for agent workspaces
 - An MCP resource server with allocate, list, renew, and release tools
 - A Go CLI, host doctor, and orchestration daemon foundation
@@ -63,6 +64,8 @@ CUDA discovery does not depend on login-shell profile files: setup locates
 uses a fresh CMake cache so a failed first configuration can be retried.
 Setup also publishes `nvcc` through `/usr/local/bin` and registers the installed
 llama.cpp and CUDA library directories with the dynamic linker.
+The toolbox image is built in the `llama-stack` service account's rootless
+Podman storage so the unprivileged inference service can launch it.
 
 For a staged first installation that does not start services:
 
@@ -135,6 +138,19 @@ llama-stack model list
 Direct Hugging Face downloads and declarative model manifests are planned for
 the next model-management pass.
 
+For a small tool-capable smoke-test model, download a GGUF and import it:
+
+```bash
+sudo llama-stack model add ~/Downloads/SmolLM3-3B-128K-Q4_K_M.gguf
+sudo systemctl restart llama-server.service
+```
+
+The default configuration enables Jinja chat templates, llama.cpp's built-in
+tools, the rootless Podman toolbox runtime, and the read-only SearXNG MCP
+server. Open WebUI users do not receive host shell access: command execution
+occurs inside the toolbox container. Keep public signup disabled because every
+approved user can ask the model to invoke the enabled tools.
+
 ## Agent port leases
 
 `llama-stackd` owns the shared TCP port pool configured under `[ports]`. Ports
@@ -185,6 +201,10 @@ The MCP server is deliberately not added to llama-server's global static MCP
 configuration. A single static capability would erase user isolation. The
 workspace controller will launch one MCP process per run and inject that run's
 capability when workspace orchestration is implemented.
+
+The read-only search MCP is global because it carries no user capability and
+accepts only search terms; its upstream endpoint is fixed by generated
+configuration. It cannot fetch an arbitrary caller-supplied URL.
 
 Administrators can inspect or revoke leases:
 

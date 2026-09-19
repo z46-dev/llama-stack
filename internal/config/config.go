@@ -67,6 +67,9 @@ type (
 		TensorSplit     string `toml:"tensor_split"`
 		IdleTimeout     int    `toml:"idle_timeout_seconds"`
 		APIKeyFile      string `toml:"api_key_file"`
+		Jinja           bool   `toml:"jinja"`
+		Tools           string `toml:"tools"`
+		MCPServersFile  string `toml:"mcp_servers_file"`
 	}
 
 	OpenWebUI struct {
@@ -96,6 +99,8 @@ type (
 	}
 
 	Toolbox struct {
+		Enabled          bool    `toml:"enabled"`
+		Runtime          string  `toml:"runtime"`
 		Image            string  `toml:"image"`
 		Memory           string  `toml:"memory"`
 		CPUs             float64 `toml:"cpus"`
@@ -171,10 +176,11 @@ func (cfg Config) Validate() (err error) {
 	}
 
 	if !filepath.IsAbs(cfg.Llama.Binary) || !filepath.IsAbs(cfg.Llama.APIKeyFile) ||
+		!filepath.IsAbs(cfg.Llama.MCPServersFile) ||
 		!filepath.IsAbs(cfg.OpenWebUI.SecretFile) || !filepath.IsAbs(cfg.SearXNG.SecretFile) ||
 		!filepath.IsAbs(cfg.Ports.Database) || !filepath.IsAbs(cfg.Ports.AdminTokenFile) ||
 		!filepath.IsAbs(cfg.Jobs.Database) {
-		err = errors.New("binary and secret file paths must be absolute")
+		err = errors.New("binary, generated, and secret file paths must be absolute")
 		return
 	}
 
@@ -206,6 +212,17 @@ func (cfg Config) Validate() (err error) {
 	if cfg.OpenWebUI.ContextCompactionTokenCap < cfg.OpenWebUI.ContextCompactionThreshold {
 		err = errors.New("context compaction token cap must not be below its threshold")
 		return
+	}
+
+	if cfg.Toolbox.Enabled {
+		if cfg.Toolbox.Runtime != "podman" {
+			err = errors.New("toolbox.runtime must be podman")
+			return
+		}
+		if strings.TrimSpace(cfg.Toolbox.Image) == "" || strings.TrimSpace(cfg.Llama.Tools) == "" {
+			err = errors.New("enabled toolbox requires toolbox.image and llama.tools")
+			return
+		}
 	}
 
 	if cfg.Ports.Start < 1024 || cfg.Ports.Start > cfg.Ports.End || cfg.Ports.End > 65535 {

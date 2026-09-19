@@ -62,6 +62,20 @@ func TestWriteProducesHardenedStackConfiguration(t *testing.T) {
 	if !strings.Contains(string(contents), "User=llama-stack") || !strings.Contains(string(contents), "ProtectSystem=strict") {
 		t.Fatalf("service isolation missing:\n%s", contents)
 	}
+	if !strings.Contains(string(contents), "XDG_RUNTIME_DIR=/run/llama-stack") ||
+		!strings.Contains(string(contents), "RuntimeDirectory=llama-stack") ||
+		!strings.Contains(string(contents), "Delegate=yes") ||
+		strings.Contains(string(contents), "NoNewPrivileges=true") {
+		t.Fatalf("rootless Podman runtime configuration missing:\n%s", contents)
+	}
+
+	if contents, err = os.ReadFile(rooted(root, cfg.Llama.MCPServersFile)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "llama-stack-search-mcp") ||
+		!strings.Contains(string(contents), "http://127.0.0.1:8082") {
+		t.Fatalf("search MCP configuration missing:\n%s", contents)
+	}
 
 	if contents, err = os.ReadFile(rooted(root, "/etc/containers/systemd/llama-open-webui.container")); err != nil {
 		t.Fatal(err)

@@ -148,6 +148,10 @@ install -m 0755 "$REPO_DIR/build/llama-stack" /usr/local/bin/llama-stack
 install -d -m 0755 /usr/local/libexec/llama-stack
 install -m 0755 "$REPO_DIR/build/llama-stackd" /usr/local/libexec/llama-stack/llama-stackd
 install -m 0755 "$REPO_DIR/build/llama-stack-resource-mcp" /usr/local/libexec/llama-stack/llama-stack-resource-mcp
+install -m 0755 "$REPO_DIR/build/llama-stack-search-mcp" /usr/local/libexec/llama-stack/llama-stack-search-mcp
+install -d -m 0755 /usr/share/llama-stack/toolbox
+install -m 0644 "$REPO_DIR/containers/toolbox/Containerfile" /usr/share/llama-stack/toolbox/Containerfile
+install -m 0644 "$REPO_DIR/containers/toolbox/AGENTS.md" /usr/share/llama-stack/toolbox/AGENTS.md
 
 if [[ $skip_llama_build == false ]]; then
     "$SCRIPT_DIR/install-llama-cpp.sh" "$CONFIG_DIR/config.toml"

@@ -10,7 +10,9 @@ RUN dnf upgrade -y && \
         python3-devel python3-pip ripgrep rsync shfmt sqlite sqlite-devel \
         strace tar time tmux tree unzip valgrind vim-minimal wget xz yq \
         zip zstd && \
-    dnf clean all
+    dnf clean all && \
+    install -d -m 1777 /workspace /exports
 
 WORKDIR /workspace
+COPY AGENTS.md /workspace/AGENTS.md
 CMD ["sleep", "infinity"]

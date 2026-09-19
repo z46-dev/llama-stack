@@ -26,6 +26,11 @@ import (
 
 var version string = "development"
 
+const (
+	toolboxBuildContext string = "/usr/share/llama-stack/toolbox"
+	toolboxRuntimePath  string = "/run/llama-stack"
+)
+
 type (
 	commandOptions struct {
 		Doctor   *doctorOptions   `arg:"subcommand:doctor" help:"inspect the host and installed stack"`
@@ -185,6 +190,9 @@ func runInstall(options installOptions) (err error) {
 	if err = initializeState(cfg); err != nil {
 		return
 	}
+	if err = buildToolboxImage(cfg); err != nil {
+		return
+	}
 	if err = pullServiceImages(cfg); err != nil {
 		return
 	}
@@ -254,19 +262,11 @@ func runModel(options modelOptions) (err error) {
 // initializeState creates secrets and persistent directories with service ownership.
 func initializeState(cfg config.Config) (err error) {
 	var (
-		account *user.User
-		uid     int
-		gid     int
+		uid int
+		gid int
 	)
 
-	if account, err = user.Lookup(cfg.Stack.User); err != nil {
-		err = fmt.Errorf("service account %q is missing: %w", cfg.Stack.User, err)
-		return
-	}
-	if uid, err = strconv.Atoi(account.Uid); err != nil {
-		return
-	}
-	if gid, err = strconv.Atoi(account.Gid); err != nil {
+	if uid, gid, err = serviceIdentity(cfg.Stack.User); err != nil {
 		return
 	}
 
@@ -289,6 +289,44 @@ func initializeState(cfg config.Config) (err error) {
 		err = ensureSecret(cfg.Ports.AdminTokenFile, "lsadmin_", uid, gid)
 	}
 
+	return
+}
+
+// buildToolboxImage prepares the configured image in the service user's rootless Podman storage.
+func buildToolboxImage(cfg config.Config) (err error) {
+	var (
+		uid  int
+		gid  int
+		args []string
+	)
+
+	if !cfg.Toolbox.Enabled {
+		return
+	}
+	if uid, gid, err = serviceIdentity(cfg.Stack.User); err != nil {
+		return
+	}
+	if err = os.MkdirAll(toolboxRuntimePath, 0o700); err != nil {
+		return
+	}
+	if err = os.Chmod(toolboxRuntimePath, 0o700); err != nil {
+		return
+	}
+	if err = os.Chown(toolboxRuntimePath, uid, gid); err != nil {
+		return
+	}
+
+	args = []string{
+		"--user", cfg.Stack.User,
+		"--", "env",
+		"HOME=" + cfg.Paths.State,
+		"XDG_RUNTIME_DIR=" + toolboxRuntimePath,
+		"podman", "build",
+		"--tag", cfg.Toolbox.Image,
+		toolboxBuildContext,
+	}
+	fmt.Printf("Building toolbox image %s as %s...\n", cfg.Toolbox.Image, cfg.Stack.User)
+	err = runCommand("runuser", args...)
 	return
 }
 
@@ -411,24 +449,18 @@ func administratorClient(cfg config.Config) (client resourceapi.Client, err erro
 // setGeneratedOwnership makes secret-bearing and bind-mounted files available only to the service account.
 func setGeneratedOwnership(cfg config.Config) (err error) {
 	var (
-		account *user.User
-		uid     int
-		gid     int
-		paths   []string
+		uid   int
+		gid   int
+		paths []string
 	)
 
-	if account, err = user.Lookup(cfg.Stack.User); err != nil {
-		return
-	}
-	if uid, err = strconv.Atoi(account.Uid); err != nil {
-		return
-	}
-	if gid, err = strconv.Atoi(account.Gid); err != nil {
+	if uid, gid, err = serviceIdentity(cfg.Stack.User); err != nil {
 		return
 	}
 
 	paths = []string{
 		"/etc/llama-stack/generated/open-webui.env",
+		cfg.Llama.MCPServersFile,
 		filepath.Join(cfg.Paths.State, "generated"),
 		filepath.Join(cfg.Paths.State, "generated", "searxng-settings.yml"),
 		filepath.Join(cfg.Paths.State, "generated", "downloads-nginx.conf"),
@@ -437,6 +469,24 @@ func setGeneratedOwnership(cfg config.Config) (err error) {
 		if err = os.Chown(path, uid, gid); err != nil {
 			return
 		}
+	}
+
+	return
+}
+
+// serviceIdentity resolves the numeric ownership used by native and rootless services.
+func serviceIdentity(username string) (uid, gid int, err error) {
+	var account *user.User
+
+	if account, err = user.Lookup(username); err != nil {
+		err = fmt.Errorf("service account %q is missing: %w", username, err)
+		return
+	}
+	if uid, err = strconv.Atoi(account.Uid); err != nil {
+		return
+	}
+	if gid, err = strconv.Atoi(account.Gid); err != nil {
+		return
 	}
 
 	return
@@ -470,7 +520,6 @@ func addLocalModel(cfg config.Config, sourceArgument string) (err error) {
 		info        os.FileInfo
 		input       *os.File
 		output      *os.File
-		account     *user.User
 		uid         int
 		gid         int
 		written     int64
@@ -531,13 +580,7 @@ func addLocalModel(cfg config.Config, sourceArgument string) (err error) {
 		return
 	}
 
-	if account, err = user.Lookup(cfg.Stack.User); err != nil {
-		return
-	}
-	if uid, err = strconv.Atoi(account.Uid); err != nil {
-		return
-	}
-	if gid, err = strconv.Atoi(account.Gid); err != nil {
+	if uid, gid, err = serviceIdentity(cfg.Stack.User); err != nil {
 		return
 	}
 	if err = os.Chown(output.Name(), uid, gid); err != nil {
@@ -571,15 +614,21 @@ func listModels(cfg config.Config) (err error) {
 // runLlamaServer replaces the helper process with llama-server using validated configuration.
 func runLlamaServer() (err error) {
 	var (
-		cfg  config.Config
-		args []string
-		env  []string
+		cfg config.Config
+		env []string
 	)
 
 	if cfg, err = config.Load(config.Path()); err != nil {
 		return
 	}
 
+	env = append(os.Environ(), "LLAMA_CACHE="+cfg.Paths.Cache)
+	err = syscall.Exec(cfg.Llama.Binary, llamaServerArgs(cfg), env)
+	return
+}
+
+// llamaServerArgs converts validated configuration into the native server command line.
+func llamaServerArgs(cfg config.Config) (args []string) {
 	args = []string{
 		cfg.Llama.Binary,
 		"--host", cfg.Llama.Host,
@@ -593,8 +642,19 @@ func runLlamaServer() (err error) {
 		"--sleep-idle-seconds", strconv.Itoa(cfg.Llama.IdleTimeout),
 		"--api-key-file", cfg.Llama.APIKeyFile,
 	}
-	env = append(os.Environ(), "LLAMA_CACHE="+cfg.Paths.Cache)
-	err = syscall.Exec(cfg.Llama.Binary, args, env)
+	if cfg.Llama.Jinja {
+		args = append(args, "--jinja")
+	}
+	if cfg.Llama.Tools != "" {
+		args = append(args, "--tools", cfg.Llama.Tools)
+	}
+	if cfg.Toolbox.Enabled {
+		args = append(args, "--tools-runtime", cfg.Toolbox.Runtime+":"+cfg.Toolbox.Image)
+	}
+	if cfg.SearXNG.Enabled {
+		args = append(args, "--mcp-servers-config", cfg.Llama.MCPServersFile)
+	}
+
 	return
 }
 

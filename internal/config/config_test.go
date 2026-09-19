@@ -23,8 +23,28 @@ func TestExampleConfiguration(t *testing.T) {
 	if !cfg.OpenWebUI.ContextCompaction {
 		t.Fatal("context compaction must be enabled in the example")
 	}
+	if !cfg.Toolbox.Enabled || cfg.Toolbox.Runtime != "podman" || !cfg.Llama.Jinja {
+		t.Fatal("toolbox and Jinja support must be enabled in the example")
+	}
 	if cfg.Jobs.Database != "/var/lib/llama-stack/jobs.db" {
 		t.Fatalf("unexpected scheduler database: %s", cfg.Jobs.Database)
+	}
+}
+
+// TestToolboxRequiresSupportedRuntime rejects a runtime llama-server cannot launch.
+func TestToolboxRequiresSupportedRuntime(t *testing.T) {
+	var (
+		_, filename, _, _ = runtime.Caller(0)
+		cfg               Config
+		err               error
+	)
+
+	if cfg, err = Load(filepath.Join(filepath.Dir(filename), "..", "..", "config", "config.example.toml")); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Toolbox.Runtime = "docker"
+	if err = cfg.Validate(); err == nil {
+		t.Fatal("expected unsupported toolbox runtime to be rejected")
 	}
 }
 

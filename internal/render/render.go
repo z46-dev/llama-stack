@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,15 +11,35 @@ import (
 	"github.com/z46-dev/llama-stack/internal/config"
 )
 
-type output struct {
-	path string
-	mode os.FileMode
-	data string
-}
+type (
+	output struct {
+		path string
+		mode os.FileMode
+		data string
+	}
+
+	mcpServer struct {
+		Command string            `json:"command"`
+		Args    []string          `json:"args"`
+		Env     map[string]string `json:"env"`
+	}
+
+	mcpConfiguration struct {
+		Servers map[string]mcpServer `json:"mcpServers"`
+	}
+)
 
 // Write generates systemd and container configuration beneath root.
 func Write(cfg config.Config, root string) (err error) {
-	var outputs []output = []output{
+	var (
+		mcpJSON []byte
+		outputs []output
+	)
+
+	if mcpJSON, err = json.MarshalIndent(buildMCPConfiguration(cfg), "", "  "); err != nil {
+		return
+	}
+	outputs = []output{
 		{path: "/etc/systemd/system/llama-stack.target", mode: 0o644, data: targetUnit(cfg)},
 		{path: "/etc/systemd/system/llama-server.service", mode: 0o644, data: llamaUnit(cfg)},
 		{path: "/etc/systemd/system/llama-stackd.service", mode: 0o644, data: stackdUnit(cfg)},
@@ -26,6 +47,7 @@ func Write(cfg config.Config, root string) (err error) {
 		{path: "/etc/containers/systemd/llama-open-webui.container", mode: 0o644, data: openWebUIQuadlet(cfg)},
 		{path: "/etc/containers/systemd/llama-searxng.container", mode: 0o644, data: searxngQuadlet(cfg)},
 		{path: "/etc/containers/systemd/llama-downloads.container", mode: 0o644, data: downloadsQuadlet(cfg)},
+		{path: cfg.Llama.MCPServersFile, mode: 0o640, data: string(mcpJSON) + "\n"},
 		{path: filepath.Join(cfg.Paths.State, "generated", "downloads-nginx.conf"), mode: 0o640, data: downloadsNGINX(cfg)},
 	}
 
@@ -38,6 +60,22 @@ func Write(cfg config.Config, root string) (err error) {
 	if err = writeOpenWebUIEnvironment(cfg, root); err == nil {
 		err = writeSearxngSettings(cfg, root)
 	}
+	return
+}
+
+// buildMCPConfiguration exposes only administrator-selected local MCP servers.
+func buildMCPConfiguration(cfg config.Config) (result mcpConfiguration) {
+	result.Servers = make(map[string]mcpServer)
+	if cfg.SearXNG.Enabled {
+		result.Servers["search"] = mcpServer{
+			Command: "/usr/local/libexec/llama-stack/llama-stack-search-mcp",
+			Args:    []string{},
+			Env: map[string]string{
+				"SEARXNG_URL": fmt.Sprintf("http://127.0.0.1:%d", cfg.SearXNG.Port),
+			},
+		}
+	}
+
 	return
 }
 
@@ -175,21 +213,31 @@ WantedBy=multi-user.target
 }
 
 func llamaUnit(cfg config.Config) string {
+	var dependencies string
+	if cfg.SearXNG.Enabled {
+		dependencies = "After=llama-searxng.service\nWants=llama-searxng.service\n"
+	}
+
 	return fmt.Sprintf(`[Unit]
 Description=llama.cpp inference server
 After=network-online.target
 Wants=network-online.target
+%s
 
 [Service]
 Type=simple
 User=%s
 Group=%s
 Environment=LLAMA_STACK_CONFIG=/etc/llama-stack/config.toml
+Environment=HOME=%s
+Environment=XDG_RUNTIME_DIR=/run/llama-stack
+RuntimeDirectory=llama-stack
+RuntimeDirectoryMode=0700
+Delegate=yes
 ExecStart=/usr/local/bin/llama-stack internal run-llama-server
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=45
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
@@ -197,7 +245,7 @@ ReadWritePaths=%s %s
 
 [Install]
 WantedBy=llama-stack.target
-`, cfg.Stack.User, cfg.Stack.Group, cfg.Paths.State, cfg.Paths.Cache)
+`, dependencies, cfg.Stack.User, cfg.Stack.Group, cfg.Paths.State, cfg.Paths.State, cfg.Paths.Cache)
 }
 
 func stackdUnit(cfg config.Config) string {

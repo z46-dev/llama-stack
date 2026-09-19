@@ -32,6 +32,9 @@ split_mode = "layer"
 tensor_split = "1,1,1"
 idle_timeout_seconds = 900
 api_key_file = "/etc/llama-stack/secrets/llama-api-keys"
+jinja = true
+tools = "all"
+mcp_servers_file = "/etc/llama-stack/generated/mcp.json"
 
 [open_webui]
 enabled = true
@@ -59,6 +62,8 @@ port = 8081
 directory_listing = false
 
 [toolbox]
+enabled = true
+runtime = "podman"
 image = "localhost/llama-toolbox:latest"
 memory = "8g"
 cpus = 8.0
