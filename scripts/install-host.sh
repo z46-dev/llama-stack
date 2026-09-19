@@ -108,8 +108,8 @@ if [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]]; then
     if ! getent group "$ADMIN_GROUP" | awk -F: -v user="$SUDO_USER" '
         {
             count = split($4, members, ",")
-            for (index = 1; index <= count; index++) {
-                if (members[index] == user) {
+            for (member_index = 1; member_index <= count; member_index++) {
+                if (members[member_index] == user) {
                     found = 1
                 }
             }

@@ -29,6 +29,10 @@ var version string = "development"
 const (
 	toolboxBuildContext string = "/usr/share/llama-stack/toolbox"
 	toolboxRuntimePath  string = "/run/llama-stack"
+	rootlessPodmanConfiguration string = `[engine]
+cgroup_manager = "cgroupfs"
+events_logger = "file"
+`
 )
 
 type (
@@ -278,6 +282,9 @@ func initializeState(cfg config.Config) (err error) {
 			return
 		}
 	}
+	if err = configureRootlessPodman(cfg, uid, gid); err != nil {
+		return
+	}
 
 	if err = ensureSecret(cfg.Llama.APIKeyFile, "sk-", uid, gid); err == nil {
 		err = ensureSecret(cfg.OpenWebUI.SecretFile, "", uid, gid)
@@ -287,6 +294,31 @@ func initializeState(cfg config.Config) (err error) {
 	}
 	if err == nil {
 		err = ensureSecret(cfg.Ports.AdminTokenFile, "lsadmin_", uid, gid)
+	}
+
+	return
+}
+
+// configureRootlessPodman avoids requiring a systemd user session for tool containers.
+func configureRootlessPodman(cfg config.Config, uid, gid int) (err error) {
+	var (
+		directory string = filepath.Join(cfg.Paths.State, ".config", "containers")
+		path      string = filepath.Join(directory, "containers.conf")
+	)
+
+	if err = os.MkdirAll(directory, 0o750); err != nil {
+		return
+	}
+	for _, ownedDirectory := range []string{filepath.Join(cfg.Paths.State, ".config"), directory} {
+		if err = os.Chown(ownedDirectory, uid, gid); err != nil {
+			return
+		}
+	}
+	if err = os.WriteFile(path, []byte(rootlessPodmanConfiguration), 0o640); err != nil {
+		return
+	}
+	if err = os.Chown(path, uid, gid); err != nil {
+		return
 	}
 
 	return
@@ -321,7 +353,7 @@ func buildToolboxImage(cfg config.Config) (err error) {
 		"--", "env",
 		"HOME=" + cfg.Paths.State,
 		"XDG_RUNTIME_DIR=" + toolboxRuntimePath,
-		"podman", "build",
+		"podman", "--cgroup-manager=cgroupfs", "build",
 		"--tag", cfg.Toolbox.Image,
 		toolboxBuildContext,
 	}

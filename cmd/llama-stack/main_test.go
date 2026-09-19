@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexflint/go-arg"
@@ -18,6 +21,27 @@ func TestCommandGrammar(t *testing.T) {
 	}
 	if err = run([]string{"resource", "capability", "issue", "--user", "user-a"}); err == nil {
 		t.Fatalf("incomplete capability command returned %v", err)
+	}
+}
+
+// TestConfigureRootlessPodmanDisablesSystemdCgroups covers non-login service accounts.
+func TestConfigureRootlessPodmanDisablesSystemdCgroups(t *testing.T) {
+	var (
+		cfg      config.Config
+		contents []byte
+		err      error
+	)
+
+	cfg.Paths.State = t.TempDir()
+	if err = configureRootlessPodman(cfg, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	if contents, err = os.ReadFile(filepath.Join(cfg.Paths.State, ".config", "containers", "containers.conf")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), `cgroup_manager = "cgroupfs"`) ||
+		!strings.Contains(string(contents), `events_logger = "file"`) {
+		t.Fatalf("unexpected rootless Podman configuration:\n%s", contents)
 	}
 }
 
