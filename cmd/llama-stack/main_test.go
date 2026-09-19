@@ -21,6 +21,15 @@ func TestCommandGrammar(t *testing.T) {
 	}
 }
 
+// TestRunCommandAtDoesNotInheritWorkingDirectory protects no-login service commands.
+func TestRunCommandAtDoesNotInheritWorkingDirectory(t *testing.T) {
+	var err error
+
+	if err = runCommandAt("/", "/usr/bin/test", "/", "-ef", "."); err != nil {
+		t.Fatalf("run command from explicit directory: %v", err)
+	}
+}
+
 // TestLlamaServerArgsIncludesTooling protects the configured agent runtime.
 func TestLlamaServerArgsIncludesTooling(t *testing.T) {
 	var (

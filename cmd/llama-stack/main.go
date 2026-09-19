@@ -326,7 +326,7 @@ func buildToolboxImage(cfg config.Config) (err error) {
 		toolboxBuildContext,
 	}
 	fmt.Printf("Building toolbox image %s as %s...\n", cfg.Toolbox.Image, cfg.Stack.User)
-	err = runCommand("runuser", args...)
+	err = runCommandAt("/", "runuser", args...)
 	return
 }
 
@@ -660,7 +660,14 @@ func llamaServerArgs(cfg config.Config) (args []string) {
 
 // runCommand executes a system administration command with inherited output.
 func runCommand(command string, args ...string) (err error) {
+	err = runCommandAt("", command, args...)
+	return
+}
+
+// runCommandAt executes a system administration command from a safe working directory.
+func runCommandAt(directory, command string, args ...string) (err error) {
 	var process *exec.Cmd = exec.Command(command, args...)
+	process.Dir = directory
 	process.Stdout = os.Stdout
 	process.Stderr = os.Stderr
 	process.Stdin = os.Stdin
