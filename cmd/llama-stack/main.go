@@ -267,15 +267,20 @@ func runModel(options modelOptions) (err error) {
 // initializeState creates secrets and persistent directories with service ownership.
 func initializeState(cfg config.Config) (err error) {
 	var (
-		uid int
-		gid int
+		uid   int
+		gid   int
+		paths []string
 	)
 
 	if uid, gid, err = serviceIdentity(cfg.Stack.User); err != nil {
 		return
 	}
 
-	for _, path := range []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts, filepath.Join(cfg.Paths.State, "open-webui"), filepath.Dir(cfg.Llama.APIKeyFile), filepath.Dir(cfg.OpenWebUI.SecretFile), filepath.Dir(cfg.SearXNG.SecretFile), filepath.Dir(cfg.Ports.AdminTokenFile), filepath.Dir(cfg.Ports.Database), filepath.Dir(cfg.Jobs.Database)} {
+	paths = []string{cfg.Paths.State, cfg.Paths.Cache, cfg.Paths.Models, cfg.Paths.Users, cfg.Paths.Artifacts, filepath.Join(cfg.Paths.State, "open-webui"), filepath.Dir(cfg.Llama.APIKeyFile), filepath.Dir(cfg.OpenWebUI.SecretFile), filepath.Dir(cfg.SearXNG.SecretFile), filepath.Dir(cfg.Ports.AdminTokenFile), filepath.Dir(cfg.Ports.Database), filepath.Dir(cfg.Jobs.Database)}
+	if cfg.AgentTools.Enabled {
+		paths = append(paths, filepath.Dir(cfg.AgentTools.APIKeyFile))
+	}
+	for _, path := range paths {
 		if err = os.MkdirAll(path, 0o750); err != nil {
 			return
 		}
@@ -295,6 +300,9 @@ func initializeState(cfg config.Config) (err error) {
 	}
 	if err == nil {
 		err = ensureSecret(cfg.Ports.AdminTokenFile, "lsadmin_", uid, gid)
+	}
+	if err == nil && cfg.AgentTools.Enabled {
+		err = ensureSecret(cfg.AgentTools.APIKeyFile, "lstool_", uid, gid)
 	}
 
 	return

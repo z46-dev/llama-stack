@@ -43,6 +43,7 @@ func Write(cfg config.Config, root string) (err error) {
 		{path: "/etc/systemd/system/llama-stack.target", mode: 0o644, data: targetUnit(cfg)},
 		{path: "/etc/systemd/system/llama-server.service", mode: 0o644, data: llamaUnit(cfg)},
 		{path: "/etc/systemd/system/llama-stackd.service", mode: 0o644, data: stackdUnit(cfg)},
+		{path: "/etc/systemd/system/llama-agent-tools.service", mode: 0o644, data: agentToolsUnit(cfg)},
 		{path: "/etc/containers/systemd/llama-stack.network", mode: 0o644, data: networkQuadlet()},
 		{path: "/etc/containers/systemd/llama-open-webui.container", mode: 0o644, data: openWebUIQuadlet(cfg)},
 		{path: "/etc/containers/systemd/llama-searxng.container", mode: 0o644, data: searxngQuadlet(cfg)},
@@ -82,9 +83,12 @@ func buildMCPConfiguration(cfg config.Config) (result mcpConfiguration) {
 // writeOpenWebUIEnvironment renders secret-bearing environment separately with restrictive permissions.
 func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 	var (
-		secret []byte
-		apiKey []byte
-		lines  []string
+		secret     []byte
+		apiKey     []byte
+		toolKey    []byte
+		connections []byte
+		lines      []string
+		marshalErr error
 	)
 
 	if secret, err = os.ReadFile(rooted(root, cfg.OpenWebUI.SecretFile)); err != nil {
@@ -94,6 +98,12 @@ func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 	if apiKey, err = os.ReadFile(rooted(root, cfg.Llama.APIKeyFile)); err != nil {
 		err = fmt.Errorf("read llama API key: %w", err)
 		return
+	}
+	if cfg.AgentTools.Enabled {
+		if toolKey, err = os.ReadFile(rooted(root, cfg.AgentTools.APIKeyFile)); err != nil {
+			err = fmt.Errorf("read agent tools API key: %w", err)
+			return
+		}
 	}
 
 	lines = []string{
@@ -106,6 +116,26 @@ func writeOpenWebUIEnvironment(cfg config.Config, root string) (err error) {
 		"CONTEXT_COMPACTION_TOKEN_THRESHOLD=" + strconv.Itoa(cfg.OpenWebUI.ContextCompactionThreshold),
 		"CONTEXT_COMPACTION_TOKEN_CAP=" + strconv.Itoa(cfg.OpenWebUI.ContextCompactionTokenCap),
 		"CONTEXT_COMPACTION_RETENTION_PERCENTAGE=" + strconv.Itoa(cfg.OpenWebUI.ContextCompactionRetention),
+	}
+	if cfg.AgentTools.Enabled {
+		connections, marshalErr = json.Marshal([]map[string]any{{
+			"url":       fmt.Sprintf("http://host.containers.internal:%d", cfg.AgentTools.Port),
+			"path":      "/openapi.json",
+			"type":      "openapi",
+			"auth_type": "bearer",
+			"key":       strings.TrimSpace(string(toolKey)),
+			"config":    map[string]bool{"enable": true},
+			"info": map[string]string{
+				"id":          "llama-stack-tools",
+				"name":        "llama-stack tools",
+				"description": "Isolated command execution and read-only web search",
+			},
+		}})
+		if marshalErr != nil {
+			err = marshalErr
+			return
+		}
+		lines = append(lines, "TOOL_SERVER_CONNECTIONS="+string(connections))
 	}
 	if cfg.SearXNG.Enabled {
 		lines = append(lines,
@@ -192,6 +222,9 @@ func rooted(root, path string) (result string) {
 
 func targetUnit(cfg config.Config) string {
 	var units []string = []string{"llama-server.service", "llama-stackd.service"}
+	if cfg.AgentTools.Enabled {
+		units = append(units, "llama-agent-tools.service")
+	}
 	if cfg.OpenWebUI.Enabled {
 		units = append(units, "llama-open-webui.service")
 	}
@@ -210,6 +243,41 @@ After=network-online.target
 [Install]
 WantedBy=multi-user.target
 `, strings.Join(units, " "))
+}
+
+func agentToolsUnit(cfg config.Config) string {
+	var dependencies string
+	if cfg.SearXNG.Enabled {
+		dependencies = "After=llama-searxng.service\nWants=llama-searxng.service\n"
+	}
+
+	return fmt.Sprintf(`[Unit]
+Description=Authenticated OpenAPI tools for llama-stack
+After=network-online.target
+Wants=network-online.target
+%s
+[Service]
+Type=simple
+User=%s
+Group=%s
+Environment=LLAMA_STACK_CONFIG=/etc/llama-stack/config.toml
+Environment=HOME=%s
+Environment=XDG_RUNTIME_DIR=/run/llama-stack-tools
+RuntimeDirectory=llama-stack-tools
+RuntimeDirectoryMode=0700
+Delegate=yes
+ExecStart=/usr/local/libexec/llama-stack/llama-stack-agent-tools
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=%s %s
+
+[Install]
+WantedBy=llama-stack.target
+`, dependencies, cfg.Stack.User, cfg.Stack.Group, cfg.Paths.State, cfg.Paths.State, cfg.Paths.Cache)
 }
 
 func llamaUnit(cfg config.Config) string {
@@ -283,10 +351,16 @@ NetworkName=llama-stack
 }
 
 func openWebUIQuadlet(cfg config.Config) string {
+	var dependencies string
+	if cfg.AgentTools.Enabled {
+		dependencies = "After=llama-agent-tools.service\nRequires=llama-agent-tools.service\n"
+	}
+
 	return fmt.Sprintf(`[Unit]
 Description=Open WebUI for llama-stack
 After=llama-server.service
 Requires=llama-server.service
+%s
 
 [Container]
 Image=%s
@@ -303,7 +377,7 @@ TimeoutStartSec=15min
 
 [Install]
 WantedBy=llama-stack.target
-`, cfg.OpenWebUI.Image, cfg.OpenWebUI.Host, cfg.OpenWebUI.Port, cfg.Paths.State)
+`, dependencies, cfg.OpenWebUI.Image, cfg.OpenWebUI.Host, cfg.OpenWebUI.Port, cfg.Paths.State)
 }
 
 func searxngQuadlet(cfg config.Config) string {

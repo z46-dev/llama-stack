@@ -24,6 +24,7 @@ type (
 		GPU          GPU          `toml:"gpu"`
 		Llama        Llama        `toml:"llama"`
 		OpenWebUI    OpenWebUI    `toml:"open_webui"`
+		AgentTools   AgentTools   `toml:"agent_tools"`
 		SearXNG      SearXNG      `toml:"searxng"`
 		Downloads    Downloads    `toml:"downloads"`
 		Toolbox      Toolbox      `toml:"toolbox"`
@@ -82,6 +83,14 @@ type (
 		ContextCompactionThreshold int    `toml:"context_compaction_threshold"`
 		ContextCompactionTokenCap  int    `toml:"context_compaction_token_cap"`
 		ContextCompactionRetention int    `toml:"context_compaction_retention_percent"`
+	}
+
+	AgentTools struct {
+		Enabled    bool   `toml:"enabled"`
+		Host       string `toml:"host"`
+		Port       int    `toml:"port"`
+		APIKeyFile string `toml:"api_key_file"`
+		MaxOutput  int    `toml:"max_output_bytes"`
 	}
 
 	Service struct {
@@ -188,6 +197,7 @@ func (cfg Config) Validate() (err error) {
 		!filepath.IsAbs(cfg.Llama.MCPServersFile) || !filepath.IsAbs(cfg.Llama.ModelsPresetFile) ||
 		!filepath.IsAbs(cfg.Llama.ModelProfilesFile) ||
 		!filepath.IsAbs(cfg.OpenWebUI.SecretFile) || !filepath.IsAbs(cfg.SearXNG.SecretFile) ||
+		(cfg.AgentTools.Enabled && !filepath.IsAbs(cfg.AgentTools.APIKeyFile)) ||
 		!filepath.IsAbs(cfg.Ports.Database) || !filepath.IsAbs(cfg.Ports.AdminTokenFile) ||
 		!filepath.IsAbs(cfg.Jobs.Database) {
 		err = errors.New("binary, generated, and secret file paths must be absolute")
@@ -210,6 +220,20 @@ func (cfg Config) Validate() (err error) {
 	} {
 		if port < 1 || port > 65535 {
 			err = fmt.Errorf("%s must be between 1 and 65535", name)
+			return
+		}
+	}
+	if cfg.AgentTools.Enabled {
+		if net.ParseIP(cfg.AgentTools.Host) == nil {
+			err = errors.New("agent_tools.host must be an IP address")
+			return
+		}
+		if cfg.AgentTools.Port < 1 || cfg.AgentTools.Port > 65535 {
+			err = errors.New("agent_tools.port must be between 1 and 65535")
+			return
+		}
+		if cfg.AgentTools.MaxOutput < 1024 {
+			err = errors.New("agent_tools.max_output_bytes must be at least 1024")
 			return
 		}
 	}

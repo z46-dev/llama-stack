@@ -35,6 +35,9 @@ func TestWriteProducesHardenedStackConfiguration(t *testing.T) {
 	if err = os.WriteFile(rooted(root, cfg.SearXNG.SecretFile), []byte("search-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err = os.WriteFile(rooted(root, cfg.AgentTools.APIKeyFile), []byte("lstool-test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err = Write(cfg, root); err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +48,19 @@ func TestWriteProducesHardenedStackConfiguration(t *testing.T) {
 	if !strings.Contains(string(contents), "ENABLE_CONTEXT_COMPACTION=true") ||
 		!strings.Contains(string(contents), "CONTEXT_COMPACTION_TOKEN_THRESHOLD=48000") ||
 		!strings.Contains(string(contents), "OPENAI_API_KEY=sk-test") ||
-		!strings.Contains(string(contents), "WEB_SEARCH_ENGINE=searxng") {
+		!strings.Contains(string(contents), "WEB_SEARCH_ENGINE=searxng") ||
+		!strings.Contains(string(contents), "TOOL_SERVER_CONNECTIONS=") ||
+		!strings.Contains(string(contents), "lstool-test") {
 		t.Fatalf("compaction configuration missing:\n%s", contents)
+	}
+
+	if contents, err = os.ReadFile(rooted(root, "/etc/systemd/system/llama-agent-tools.service")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "User=llama-stack") ||
+		!strings.Contains(string(contents), "XDG_RUNTIME_DIR=/run/llama-stack-tools") ||
+		!strings.Contains(string(contents), "Delegate=yes") {
+		t.Fatalf("agent tool isolation missing:\n%s", contents)
 	}
 
 	if contents, err = os.ReadFile(rooted(root, filepath.Join(cfg.Paths.State, "generated", "downloads-nginx.conf"))); err != nil {

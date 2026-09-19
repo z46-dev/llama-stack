@@ -17,6 +17,7 @@ build:
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/llama-stackd ./cmd/llama-stackd
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/llama-stack-resource-mcp ./cmd/llama-stack-resource-mcp
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/llama-stack-search-mcp ./cmd/llama-stack-search-mcp
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/llama-stack-agent-tools ./cmd/llama-stack-agent-tools
 
 fmt:
 	$(GO) fmt ./...

@@ -49,6 +49,15 @@ context_compaction_threshold = 48000
 context_compaction_token_cap = 52000
 context_compaction_retention_percent = 40
 
+[agent_tools]
+enabled = true
+# Containers reach this service through host.containers.internal. Do not open
+# this port in firewalld; requests still require the generated bearer key.
+host = "0.0.0.0"
+port = 8091
+api_key_file = "/etc/llama-stack/secrets/agent-tools-api-key"
+max_output_bytes = 1048576
+
 [searxng]
 enabled = true
 image = "docker.io/searxng/searxng:latest"

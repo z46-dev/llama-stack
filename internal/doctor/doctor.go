@@ -50,10 +50,17 @@ func Run(cfg config.Config) (report Report) {
 		report.Checks = append(report.Checks, checkFile("Search MCP server", "/usr/local/libexec/llama-stack/llama-stack-search-mcp", 0o111))
 		report.Checks = append(report.Checks, checkFile("MCP server configuration", cfg.Llama.MCPServersFile, 0o400))
 	}
+	if cfg.AgentTools.Enabled {
+		report.Checks = append(report.Checks, checkFile("Agent tools server", "/usr/local/libexec/llama-stack/llama-stack-agent-tools", 0o111))
+		report.Checks = append(report.Checks, checkFile("Agent tools API key", cfg.AgentTools.APIKeyFile, 0o400))
+	}
 	report.Checks = append(report.Checks, checkManagedDirectories(cfg)...)
 	report.Checks = append(report.Checks, checkLlamaDevices(cfg.Llama.Binary))
 	report.Checks = append(report.Checks, checkService("llama-server.service"))
 	report.Checks = append(report.Checks, checkService("llama-stackd.service"))
+	if cfg.AgentTools.Enabled {
+		report.Checks = append(report.Checks, checkService("llama-agent-tools.service"))
+	}
 
 	if cfg.OpenWebUI.Enabled {
 		report.Checks = append(report.Checks, checkService("llama-open-webui.service"))

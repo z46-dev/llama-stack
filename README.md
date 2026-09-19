@@ -138,11 +138,15 @@ llama-stack model list
 Direct Hugging Face downloads and declarative model manifests are planned for
 the next model-management pass.
 
-For a small tool-capable smoke-test model, download a GGUF and import it:
+For a small tool-capable smoke-test model, download Qwen2.5 7B Instruct Q4_K_M
+and import it. Qwen2.5 uses a tool-call format supported natively by llama.cpp;
+it does not need a compatibility template:
 
 ```bash
-sudo llama-stack model add ~/Downloads/SmolLM3-3B-128K-Q4_K_M.gguf
-sudo systemctl restart llama-server.service
+curl -fL --retry 5 --continue-at - \
+  -o ~/Downloads/llama-models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+sudo llama-stack model add ~/Downloads/llama-models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
 ```
 
 The default configuration enables Jinja chat templates, llama.cpp's built-in
@@ -151,28 +155,39 @@ server. Open WebUI users do not receive host shell access: command execution
 occurs inside the toolbox container. Keep public signup disabled because every
 approved user can ask the model to invoke the enabled tools.
 
-Some GGUF files contain chat templates that can generate tool-call text but do
-not expose standard OpenAI `tools` or structured `tool_calls`. At server start,
-llama-stack matches installed filenames against the TOML catalog at
-`/usr/share/llama-stack/model-profiles.toml` and generates native llama.cpp
-router presets. The included SmolLM3 profile installs a tool-aware template,
-disables extended thinking by default for agent work, and leaves unmatched
-models on their embedded templates. Change `model_profiles_file` in
-`/etc/llama-stack/config.toml` to maintain a site-specific catalog.
+Open WebUI does not inherit llama.cpp's internal tools. The stack therefore
+runs `llama-agent-tools.service`, an authenticated OpenAPI gateway which Open
+WebUI registers automatically. It provides `exec_shell_command`, which runs in
+a fresh resource-limited toolbox container, and read-only `web_search` through
+SearXNG. The gateway is reachable from the Open WebUI container through
+`host.containers.internal`, requires a generated bearer key, and its port must
+not be opened in firewalld.
 
-After importing SmolLM3, verify the selected parser and a real tool invocation:
+In Open WebUI, select Qwen2.5, open the **Tools** menu for the chat, enable
+**llama-stack tools**, and set function calling to **Native**. Then test with:
 
-```bash
-sudo systemctl restart llama-server.service
-curl -sS -H "Authorization: Bearer $(sudo head -n1 /etc/llama-stack/secrets/llama-api-keys)" \
-  'http://127.0.0.1:8080/props?model=SmolLM3-3B-128K-Q4_K_M' |
-  jq '{chat_format, chat_template_tool_use}'
+```text
+Use exec_shell_command exactly once to run:
+printf 'TOOL_EXECUTION_CONFIRMED\n'; cat /etc/fedora-release; uname -m
+Return only the actual tool output.
 ```
 
-`chat_format` must no longer be `null`. A request for
-`cat /etc/fedora-release` through `exec_shell_command` should then create a
-structured tool call and execute inside the toolbox rather than inventing its
-output.
+Test the gateway independently of the model or UI with:
+
+```bash
+KEY="$(sudo head -n1 /etc/llama-stack/secrets/agent-tools-api-key)"
+curl -sS -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"command":"cat /etc/fedora-release; uname -m"}' \
+  http://127.0.0.1:8091/v1/exec | jq
+```
+
+This direct check must succeed before troubleshooting model behavior. Open
+WebUI stores administrator configuration in its database; an existing Open
+WebUI data directory may retain its old empty tool-server list. A fresh install
+uses the generated configuration automatically. Existing installations can
+add `http://host.containers.internal:8091` with `/openapi.json` under Admin
+Settings → External Tools.
 
 ## Agent port leases
 

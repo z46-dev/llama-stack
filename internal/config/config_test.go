@@ -28,6 +28,9 @@ func TestExampleConfiguration(t *testing.T) {
 	if !cfg.Toolbox.Enabled || cfg.Toolbox.Runtime != "podman" || !cfg.Llama.Jinja {
 		t.Fatal("toolbox and Jinja support must be enabled in the example")
 	}
+	if !cfg.AgentTools.Enabled || cfg.AgentTools.Port != 8091 || cfg.AgentTools.MaxOutput != 1048576 {
+		t.Fatal("agent tool gateway must be enabled in the example")
+	}
 	if cfg.Jobs.Database != "/var/lib/llama-stack/jobs.db" {
 		t.Fatalf("unexpected scheduler database: %s", cfg.Jobs.Database)
 	}
